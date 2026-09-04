@@ -527,14 +527,106 @@ input::placeholder { color: #5E7183; }
 
 /* ---------- carros (la lista completa por súper) --------------------------------- */
 
+/* La fila es un <button>: hay que quitarle todo lo que trae de fábrica o se
+   dibuja como un botón gris con borde. */
 .fila-carro {
   display: flex;
   align-items: baseline;
   gap: 8px;
   padding: 10px 0;
+  border: 0;
   border-top: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  width: 100%;
+  cursor: pointer;
 }
 .fila-carro:first-of-type { border-top: 0; }
+
+/* La flecha gira al abrir. Es la única señal de que la fila se puede tocar, así
+   que va antes del nombre y no escondida al final. */
+.fila-carro .fc-flecha {
+  flex: none;
+  color: var(--muted);
+  font-size: 1.0625rem;
+  line-height: 1;
+  transition: transform .15s ease;
+  display: inline-block;
+}
+.fila-carro.is-abierto .fc-flecha { transform: rotate(90deg); color: var(--accent); }
+
+/* ---------- la lista desplegada de un supermercado -------------------------------- */
+
+.carro-detalle {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 12px 18px;
+  border-left: 2px solid var(--line);
+  margin-left: 4px;
+}
+
+.cd-fila {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.cd-fila .cd-nombre { flex: 1; font-size: .8125rem; }
+.cd-fila .cd-precio { font-variant-numeric: tabular-nums; font-size: .8125rem; font-weight: 600; }
+
+/* Lo que ese supermercado no tiene se queda a la vista pero apagado. Quitarlo de
+   la lista sería peor: no se sabría si falta o si nunca estuvo. */
+.cd-fila.cd-no .cd-nombre { color: #5E7183; text-decoration: line-through; }
+.cd-fila .cd-nota { font-size: .6875rem; color: #5E7183; font-style: italic; }
+
+.cd-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: .8125rem;
+  color: var(--muted);
+}
+.cd-total strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---------- lo más barato de cada supermercado ------------------------------------ */
+
+.mb-tienda {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 14px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+}
+.mb-tienda:first-of-type { margin-top: 4px; }
+
+.mb-tienda .mb-nombre { flex: 1; font-size: .9375rem; font-weight: 650; }
+.mb-tienda .mb-total {
+  font-variant-numeric: tabular-nums;
+  font-size: .9375rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.mb-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0 6px 12px;
+}
+
+.mb-item .mb-art { flex: 1; font-size: .8125rem; }
+.mb-item .mb-precio {
+  font-variant-numeric: tabular-nums;
+  font-size: .8125rem;
+  color: var(--muted);
+}
 
 .fila-carro .fc-tienda { font-size: .9375rem; font-weight: 600; }
 .fila-carro .fc-faltan { flex: 1; font-size: .75rem; color: var(--muted); }
@@ -549,12 +641,6 @@ input::placeholder { color: #5E7183; }
 .fila-carro .fc-apagado { color: #5E7183; font-weight: 600; }
 .fila-carro.es-parcial .fc-tienda { color: var(--muted); }
 
-.fc-detalle {
-  margin: -4px 0 4px;
-  font-size: .75rem;
-  color: #5E7183;
-}
-
 .chapa {
   flex: none;
   font-size: .625rem;
@@ -566,22 +652,6 @@ input::placeholder { color: #5E7183; }
   border-radius: 999px;
   padding: 2px 8px;
 }
-
-/* ---------- detalle artículo por artículo ----------------------------------------- */
-
-.det-art { padding: 12px 0; border-top: 1px solid var(--line); }
-.det-art:first-of-type { border-top: 0; padding-top: 0; }
-
-.det-art .det-nombre {
-  display: block;
-  font-size: .9375rem;
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.det-art .det-filas { padding-left: 2px; }
-
-/* ---------- histórico ------------------------------------------------------------ */
 
 .fila-hist {
   display: flex;

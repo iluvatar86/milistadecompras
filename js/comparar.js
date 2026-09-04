@@ -143,23 +143,71 @@
     return { completos, incompletos, todos };
   }
 
+  /* Toda la lista con los precios de UNA tienda, en el mismo orden que la lista
+     de pendientes y sin saltarse nada.
+
+     Los artículos que esa tienda no vende salen igualmente, con el motivo. Es lo
+     que pidió Pablo y es lo correcto: una lista de la que han desaparecido tres
+     renglones no se puede leer, porque no se sabe si faltan o si nunca
+     estuvieron. */
+  function filasDeTienda(pendientes, tiendaId) {
+    return pendientes.map((art) => {
+      const guardado = Store.preciosDe(art.id);
+      const info = guardado && guardado.tiendas ? guardado.tiendas[tiendaId] : null;
+      const precio = leerPrecio(info);
+      const cantidad = Math.max(1, Number(art.cantidad) || 1);
+      const hay = !!(info && info.hay && precio !== null);
+      return {
+        art, cantidad, precio, hay,
+        subtotal: hay ? precio * cantidad : null,
+        nota: (info && info.nota) || (info ? '' : sinDato({ id: tiendaId }, art, guardado))
+      };
+    });
+  }
+
   /* Comprando cada cosa donde está más barata, sin importar cuántos súper haya
      que visitar. Es el suelo teórico: nadie va a hacer esto, pero es la única
-     forma de saber CUÁNTO cuesta la comodidad de ir a un solo sitio. */
+     forma de saber CUÁNTO cuesta la comodidad de ir a un solo sitio.
+
+     LOS EMPATES SE ASIGNAN A LA TIENDA QUE YA LLEVA MÁS COSAS, y esto importa
+     más de lo que parece. La leche cuesta lo mismo en tres supermercados; si el
+     empate se resolviera por el orden de la lista, un artículo se iría a una
+     tienda a la que no había que ir por nada más, y el plan diría «ve a cuatro
+     supermercados» cuando con dos bastaba. Se cuenta primero quién gana algo de
+     verdad —sin empate— y los empatados se reparten después entre esos. */
   function repartido(pendientes) {
+    const analisis = pendientes.map((art) => ({
+      art,
+      r: porArticulo(art),
+      cantidad: Math.max(1, Number(art.cantidad) || 1)
+    }));
+
+    const votos = {};
+    analisis.forEach(({ r }) => {
+      if (r.mejores && r.mejores.length === 1) {
+        const id = r.mejores[0].tienda.id;
+        votos[id] = (votos[id] || 0) + 1;
+      }
+    });
+
     let total = 0;
     const porTienda = {};
     const sinPrecio = [];
 
-    pendientes.forEach((art) => {
-      const r = porArticulo(art);
-      const cantidad = Math.max(1, Number(art.cantidad) || 1);
+    analisis.forEach(({ art, r, cantidad }) => {
       if (!r.mejor) { sinPrecio.push(art); return; }
-      total += r.mejor.precio * cantidad;
-      const tid = r.mejor.tienda.id;
-      if (!porTienda[tid]) porTienda[tid] = { tienda: r.mejor.tienda, items: [], total: 0 };
-      porTienda[tid].items.push({ art, precio: r.mejor.precio, cantidad });
-      porTienda[tid].total += r.mejor.precio * cantidad;
+
+      const candidatas = (r.mejores && r.mejores.length) ? r.mejores : [r.mejor];
+      const elegida = candidatas.reduce((mejor, f) =>
+        (votos[f.tienda.id] || 0) > (votos[mejor.tienda.id] || 0) ? f : mejor, candidatas[0]);
+
+      const subtotal = elegida.precio * cantidad;
+      total += subtotal;
+
+      const tid = elegida.tienda.id;
+      if (!porTienda[tid]) porTienda[tid] = { tienda: elegida.tienda, items: [], total: 0 };
+      porTienda[tid].items.push({ art, precio: elegida.precio, cantidad, subtotal });
+      porTienda[tid].total += subtotal;
     });
 
     return {
@@ -246,7 +294,7 @@
   }
 
   global.Comparar = {
-    porArticulo, carros, repartido, recomendacion, frescura, costeDeLista,
+    porArticulo, carros, repartido, recomendacion, frescura, costeDeLista, filasDeTienda,
     AHORRO_MINIMO_COLONES, AHORRO_MINIMO_PCT
   };
 

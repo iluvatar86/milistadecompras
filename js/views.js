@@ -1074,17 +1074,22 @@
 
     const reco = Comparar.recomendacion(pendientes);
 
+    /* UN SOLO acordeón para las dos tarjetas, no uno por tarjeta.
+
+       Con uno por tarjeta podían quedar dos supermercados abiertos a la vez
+       —uno de «la lista completa» y otro de «no tienen todo»— y la pantalla se
+       hacía larguísima justo cuando estás comparando dos cifras que ya no caben
+       juntas. Se abre uno cada vez. */
+    const acordeon = [];
+
     // --- los carros completos -------------------------------------------------
     if (reco.carros.completos.length) {
       const tarjeta = el('section.card', [
-        el('h2.card-title', { text: 'La lista completa, súper por súper' })
+        el('h2.card-title', { text: 'La lista completa, súper por súper' }),
+        el('p.hint', { text: 'Toca un supermercado para ver tu lista con sus precios.' })
       ]);
       reco.carros.completos.forEach((c, i) => {
-        tarjeta.appendChild(el('div.fila-carro' + (i === 0 ? '.es-mejor' : ''), [
-          el('span.fc-tienda', { text: c.tienda.nombre }),
-          i === 0 ? el('span.chapa', { text: 'más barato' }) : null,
-          el('span.fc-total', { text: D.dinero(c.total) })
-        ]));
+        agregarCarroDesplegable(tarjeta, acordeon, pendientes, c, { mejor: i === 0 });
       });
       caja.appendChild(tarjeta);
     }
@@ -1093,65 +1098,123 @@
     if (reco.carros.incompletos.length) {
       const tarjeta = el('section.card', [
         el('h2.card-title', { text: 'No tienen toda la lista' }),
-        el('p.hint', { text: 'Su total no se compara con los de arriba: sería más barato solo por venderte menos cosas.' })
+        el('p.hint', { text: 'Su total no se compara con los de arriba: sería más barato solo por venderte menos cosas. Tócalos para ver qué les falta.' })
       ]);
       reco.carros.incompletos.forEach((c) => {
-        tarjeta.appendChild(el('div.fila-carro.es-parcial', [
-          el('span.fc-tienda', { text: c.tienda.nombre }),
-          el('span.fc-faltan', {
-            text: c.faltan.length === 1 ? 'le falta 1' : 'le faltan ' + c.faltan.length
-          }),
-          el('span.fc-total.fc-apagado', { text: D.dinero(c.total) })
-        ]));
-        tarjeta.appendChild(el('p.fc-detalle', {
-          text: c.faltan.map((f) => f.art.nombre).join(', ')
-        }));
+        agregarCarroDesplegable(tarjeta, acordeon, pendientes, c, { parcial: true });
       });
       caja.appendChild(tarjeta);
     }
 
-    // --- repartiendo -----------------------------------------------------------
-    const rep = reco.repartido;
-    if (rep.paradas.length > 1) {
-      const tarjeta = el('section.card', [
-        el('h2.card-title', { text: 'Comprando cada cosa donde es más barata' }),
-        el('p.reco-total', { text: D.dinero(rep.total) }),
-        el('p.hint', {
-          text: reco.mejorCarro
-            ? 'Son ' + D.dinero(reco.ahorroRepartiendo) + ' menos que en ' +
-              reco.mejorCarro.tienda.nombre + ', pero hay que ir a ' + rep.paradas.length + ' supermercados.'
-            : 'Hay que ir a ' + rep.paradas.length + ' supermercados.'
-        })
-      ]);
-      rep.paradas.forEach((p) => {
-        tarjeta.appendChild(el('div.fila-carro', [
-          el('span.fc-tienda', { text: p.tienda.nombre }),
-          el('span.fc-faltan', { text: p.items.length + (p.items.length === 1 ? ' artículo' : ' artículos') }),
-          el('span.fc-total', { text: D.dinero(p.total) })
-        ]));
-      });
-      caja.appendChild(tarjeta);
-    }
-
-    // --- artículo por artículo -------------------------------------------------
-    const detalle = el('section.card', [el('h2.card-title', { text: 'Artículo por artículo' })]);
-    pendientes.forEach((art) => {
-      const r = Comparar.porArticulo(art);
-      detalle.appendChild(el('div.det-art', [
-        el('a.det-nombre', { href: '#/articulo/' + art.id, text: art.nombre }),
-        el('div.det-filas', r.filas.map((f) => {
-          const esMejor = r.mejor && f.tienda.id === r.mejor.tienda.id && !r.empate;
-          return el('div.fila-precio' + (esMejor ? '.es-mejor' : ''), [
-            el('span.fp-tienda', { text: f.tienda.corto }),
-            el('span.fp-unidad', { text: f.porUnidad }),
-            f.hay ? chapaPrecio(f.precio, esMejor) : el('span.precio-no', { text: f.nota || 'no lo vende' })
-          ]);
-        }))
-      ]));
-    });
-    caja.appendChild(detalle);
+    // --- lo más barato de cada supermercado -------------------------------------
+    caja.appendChild(tarjetaLoMasBarato(reco));
 
     return caja;
+  }
+
+  /* Una fila de supermercado que se despliega con toda la lista y sus precios.
+
+     Se construye la fila Y su detalle de una vez, y el clic solo enciende y
+     apaga el detalle: NO se llama a App.render(). Rehacer la pantalla haría
+     saltar el scroll justo cuando estás comparando, que es cuando más molesta.
+
+     Funciona en acordeón —abrir uno cierra los demás— porque con cinco
+     supermercados y quince artículos, tenerlos todos abiertos convierte la
+     pantalla en un rollo de varios metros. */
+  function agregarCarroDesplegable(tarjeta, acordeon, pendientes, carro, opciones) {
+    const detalle = el('div.carro-detalle', { hidden: true });
+
+    Comparar.filasDeTienda(pendientes, carro.tienda.id).forEach((f) => {
+      detalle.appendChild(el('div.cd-fila' + (f.hay ? '' : '.cd-no'), [
+        el('span.cd-nombre', {
+          text: f.art.nombre + (f.cantidad > 1 ? '  ×' + f.cantidad : '')
+        }),
+        f.hay
+          ? el('span.cd-precio', { text: D.dinero(f.subtotal) })
+          : el('span.cd-nota', { text: f.nota || 'no lo vende' })
+      ]));
+    });
+
+    detalle.appendChild(el('div.cd-total', [
+      el('span', { text: carro.faltan.length ? 'Total de lo que sí tiene' : 'Total' }),
+      el('strong', { text: D.dinero(carro.total) })
+    ]));
+
+    const fila = el('button.fila-carro' +
+      (opciones.mejor ? '.es-mejor' : '') +
+      (opciones.parcial ? '.es-parcial' : ''), { type: 'button' }, [
+      el('span.fc-flecha', { text: '›' }),
+      el('span.fc-tienda', { text: carro.tienda.nombre }),
+      opciones.mejor ? el('span.chapa', { text: 'más barato' }) : null,
+      carro.faltan.length
+        ? el('span.fc-faltan', { text: carro.faltan.length === 1 ? 'le falta 1' : 'le faltan ' + carro.faltan.length })
+        : el('span.fc-faltan', { text: '' }),
+      el('span.fc-total' + (opciones.parcial ? '.fc-apagado' : ''), { text: D.dinero(carro.total) })
+    ]);
+
+    fila.addEventListener('click', () => {
+      const abrir = detalle.hidden;
+      acordeon.forEach((otro) => { otro.detalle.hidden = true; otro.fila.classList.remove('is-abierto'); });
+      detalle.hidden = !abrir;
+      fila.classList.toggle('is-abierto', abrir);
+    });
+
+    acordeon.push({ fila, detalle });
+    tarjeta.appendChild(fila);
+    tarjeta.appendChild(detalle);
+  }
+
+  /* Lo que gana cada supermercado, en vez de la tabla de artículo por artículo
+     que había antes.
+
+     El cambio lo pidió Pablo y mejora la pantalla: la tabla anterior repetía los
+     cinco supermercados en cada artículo —setenta y cinco cifras para una lista
+     de quince— y había que reconstruir a mano quién ganaba qué. Agrupado por
+     tienda se lee de un vistazo, y el detalle de un artículo concreto sigue a un
+     toque de distancia en su ficha. */
+  function tarjetaLoMasBarato(reco) {
+    const rep = reco.repartido;
+
+    const tarjeta = el('section.card', [
+      el('h2.card-title', { text: 'Lo más barato de cada supermercado' })
+    ]);
+
+    if (!rep.paradas.length) {
+      tarjeta.appendChild(el('p.muted', { text: 'Todavía no hay precios con los que comparar.' }));
+      return tarjeta;
+    }
+
+    tarjeta.appendChild(el('p.reco-total', { text: D.dinero(rep.total) }));
+    tarjeta.appendChild(el('p.hint', {
+      text: rep.paradas.length === 1
+        ? 'Comprándolo todo en ' + rep.paradas[0].tienda.nombre + ', que gana en todo.'
+        : (reco.mejorCarro
+            ? 'Comprando cada cosa donde es más barata: ' + D.dinero(reco.ahorroRepartiendo) +
+              ' menos que en ' + reco.mejorCarro.tienda.nombre + ', pero hay que ir a ' +
+              rep.paradas.length + ' supermercados.'
+            : 'Comprando cada cosa donde es más barata, en ' + rep.paradas.length + ' supermercados.')
+    }));
+
+    rep.paradas.forEach((p) => {
+      tarjeta.appendChild(el('div.mb-tienda', [
+        el('span.mb-nombre', { text: p.tienda.nombre }),
+        el('span.mb-total', { text: D.dinero(p.total) })
+      ]));
+      p.items.forEach((it) => {
+        tarjeta.appendChild(el('a.mb-item', { href: '#/articulo/' + it.art.id }, [
+          el('span.mb-art', { text: it.art.nombre + (it.cantidad > 1 ? '  ×' + it.cantidad : '') }),
+          el('span.mb-precio', { text: D.dinero(it.subtotal) })
+        ]));
+      });
+    });
+
+    if (rep.sinPrecio.length) {
+      tarjeta.appendChild(aviso(rep.sinPrecio.length === 1
+        ? '1 artículo no tiene precio en ningún supermercado, así que no está contado.'
+        : rep.sinPrecio.length + ' artículos no tienen precio en ningún supermercado, así que no están contados.', 'ojo'));
+    }
+
+    return tarjeta;
   }
 
   /* ===========================================================================
