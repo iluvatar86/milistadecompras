@@ -1,0 +1,525 @@
+/* ---------------------------------------------------------------------------
+   MiListadeCompras — estilos.
+
+   Misma paleta oscura que GymControl y ControlGastos, para que las tres se
+   parezcan. Aquí el verde está reservado a UNA sola cosa: el precio más barato
+   y el supermercado que gana. Todo lo demás va apagado —incluidos los precios
+   que no ganan— para que el verde signifique algo de un vistazo.
+
+   Una regla que viene aprendida de ControlGastos: las clases de dentro de una
+   fila se escriben con el nombre de su fila delante (.fila-precio .fp-tienda).
+   Sin eso, dos filas distintas con nombres parecidos se pisan según el orden en
+   que estén escritas, y el fallo no se parece a un fallo de CSS.
+--------------------------------------------------------------------------- */
+
+:root {
+  --bg: #0C1116;
+  --surface: #141B22;
+  --surface-2: #1B242D;
+  --line: #26323C;
+  --ink: #E8EEF3;
+  --muted: #8FA3B3;
+  --accent: #34D399;
+  --accent-ink: #052E22;
+  --accent-soft: rgba(52, 211, 153, .14);
+  --warn: #FBBF24;
+  --danger: #F87171;
+
+  --radius: 14px;
+  --radius-sm: 9px;
+  --pad: 16px;
+
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body { min-height: 100vh; min-height: 100dvh; }
+
+a { color: inherit; text-decoration: none; }
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- estructura ---------------------------------------------------- */
+
+.screen {
+  display: block;
+  max-width: 600px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 12px) var(--pad)
+           calc(env(safe-area-inset-bottom) + 92px);
+}
+
+.screen > div {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.top { display: flex; align-items: flex-start; gap: 12px; }
+.top-text { flex: 1; min-width: 0; }
+
+h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.15;
+  overflow-wrap: break-word;
+}
+
+.sub { margin: 4px 0 0; color: var(--muted); font-size: .875rem; }
+
+h2, h3 { margin: 0; font-weight: 650; letter-spacing: -.01em; }
+
+.muted { color: var(--muted); font-size: .875rem; margin: 0; }
+.hint { color: var(--muted); font-size: .8125rem; margin: 0; }
+.ref { color: var(--muted); font-size: .75rem; font-variant-numeric: tabular-nums; margin: 0; }
+
+.hint-box {
+  margin: 0;
+  padding: 11px 13px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: .8125rem;
+  color: var(--muted);
+}
+
+.back { color: var(--muted); font-size: .875rem; align-self: flex-start; padding: 4px 0; }
+.back:active { color: var(--ink); }
+
+.aviso {
+  margin: 0;
+  font-size: .8125rem;
+  color: var(--muted);
+}
+.aviso-ojo { color: var(--warn); }
+.aviso-malo { color: var(--danger); }
+
+/* ---------- barra de instalación ------------------------------------------- */
+
+.install-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px var(--pad);
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+  font-size: .8125rem;
+  color: var(--muted);
+}
+
+.install-actions { display: flex; gap: 8px; }
+
+.install-bar button {
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.install-bar .install-yes { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+
+/* ---------- pestañas de abajo ---------------------------------------------- */
+
+.nav {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  display: flex;
+  background: rgba(12, 17, 22, .94);
+  backdrop-filter: blur(10px);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+  z-index: 10;
+}
+
+/* Cinco pestañas en 375 px salen a unos 75 px cada una. El texto no puede
+   partirse en dos líneas o la barra crece y se come la pantalla, así que se
+   fuerza una sola línea y se recorta si hiciera falta. */
+.nav .tab {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 9px 2px 8px;
+  color: var(--muted);
+  font-size: .6875rem;
+  font-weight: 600;
+}
+
+.nav .tab span {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav .tab svg { width: 22px; height: 22px; }
+.nav .tab.is-active { color: var(--accent); }
+
+/* ---------- tarjetas ------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--pad);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card-title { font-size: 1rem; }
+.card-head { display: flex; align-items: baseline; gap: 10px; }
+.card-head .card-title { flex: 1; }
+
+.empty-state {
+  background: var(--surface);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 32px var(--pad);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
+
+.empty-state h2 { font-size: 1.05rem; }
+.empty-state p { margin: 0; color: var(--muted); font-size: .9rem; max-width: 36ch; }
+
+/* ---------- botones -------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: .9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .55; cursor: default; }
+
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-danger { color: var(--danger); }
+.btn-block { width: 100%; }
+.btn-small { min-height: 38px; padding: 0 13px; font-size: .8125rem; flex: none; }
+.btn-ya { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+
+.link-danger {
+  background: none; border: 0; padding: 4px 0;
+  color: var(--danger); font: inherit; font-size: .8125rem; cursor: pointer;
+  text-align: left;
+}
+
+.form-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.form-actions .btn { flex: 1; }
+
+/* ---------- campos --------------------------------------------------------- */
+
+input, select {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 11px 12px;
+  width: 100%;
+  min-height: 46px;
+}
+
+input[type="file"] { padding: 9px 12px; }
+input::placeholder { color: #5E7183; }
+
+.campo { display: flex; flex-direction: column; gap: 6px; }
+.campo > span { font-size: .8125rem; color: var(--muted); font-weight: 600; }
+
+.campo-doble { display: flex; gap: 10px; }
+.campo-doble .campo { flex: 1; min-width: 0; }
+
+.fila-check {
+  display: flex; align-items: center; gap: 10px;
+  font-size: .9375rem;
+}
+.fila-check input { width: 20px; height: 20px; min-height: 0; flex: none; }
+
+.buscar-form { display: flex; gap: 10px; }
+.buscar-form input { flex: 1; min-width: 0; }
+.buscar-form .btn { flex: none; }
+
+/* ---------- la recomendación ----------------------------------------------- */
+
+.card-reco { border-color: #2E3E4B; }
+
+.card-reco .reco-eti {
+  margin: 0;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--muted);
+}
+
+.card-reco .reco-tienda {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -.02em;
+}
+
+.reco-total {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.02em;
+}
+
+/* ---------- fila de artículo pendiente -------------------------------------- */
+
+.fila-pendiente {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.fila-pendiente:first-of-type { border-top: 0; padding-top: 2px; }
+
+.fila-pendiente .fp-datos { flex: 1; min-width: 0; }
+
+.fila-pendiente .fp-nombre {
+  display: block;
+  font-weight: 600;
+  font-size: .9375rem;
+  overflow-wrap: break-word;
+}
+
+.fila-pendiente .fp-precio { margin: 2px 0 0; font-size: .8125rem; color: var(--muted); }
+
+.fila-pendiente .fp-cant {
+  display: flex; align-items: center; gap: 2px; flex: none;
+}
+
+.fila-pendiente .cant-btn {
+  width: 30px; height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit; font-size: 1rem; line-height: 1;
+  cursor: pointer;
+}
+
+.fila-pendiente .cant-num {
+  min-width: 22px; text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: .875rem; font-weight: 600;
+}
+
+.fila-pendiente .fp-listo {
+  flex: none;
+  width: 38px; height: 38px;
+  border: 1px solid var(--accent);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+/* Quitar un ingrediente de una lista con nombre. Va apagado a propósito: es la
+   misma posición que el ✓ verde de «ya lo compré» en Mi lista, y darle el
+   mismo peso invitaría a tocarlo por costumbre. */
+.fila-pendiente .fp-quitar {
+  flex: none;
+  width: 38px; height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* ---------- fila de la despensa ---------------------------------------------- */
+
+.lista-articulos { display: flex; flex-direction: column; }
+
+.fila-art {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 0;
+  border-top: 1px solid var(--line);
+}
+.fila-art:first-child { border-top: 0; }
+
+.fila-art .fa-datos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.fila-art .fa-nombre { font-weight: 600; font-size: .9375rem; overflow-wrap: break-word; }
+.fila-art .fa-sub { font-size: .75rem; color: var(--muted); }
+.fila-art .fa-flecha { flex: none; color: var(--muted); font-size: 1.25rem; line-height: 1; }
+
+/* ---------- resultados de búsqueda -------------------------------------------- */
+
+.resultados { display: flex; flex-direction: column; gap: 8px; }
+
+.res-fila {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.res-fila:disabled { opacity: .5; cursor: default; }
+.res-fila .res-nombre { font-size: .875rem; font-weight: 600; }
+.res-fila .res-sub { font-size: .75rem; color: var(--muted); }
+
+/* ---------- fila de precio por tienda ------------------------------------------ */
+
+.fila-precio {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.fila-precio:first-of-type { border-top: 0; }
+
+.fila-precio .fp-tienda { flex: none; font-size: .875rem; font-weight: 600; min-width: 5.5em; }
+.fila-precio .fp-unidad { flex: 1; font-size: .6875rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.precio {
+  font-variant-numeric: tabular-nums;
+  font-size: .9375rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.precio-mejor { color: var(--accent); font-size: 1.0625rem; font-weight: 700; }
+
+.precio-no { font-size: .75rem; color: #5E7183; font-style: italic; }
+
+.fila-precio.es-mejor .fp-tienda { color: var(--ink); }
+
+/* ---------- carros (la lista completa por súper) --------------------------------- */
+
+.fila-carro {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.fila-carro:first-of-type { border-top: 0; }
+
+.fila-carro .fc-tienda { font-size: .9375rem; font-weight: 600; }
+.fila-carro .fc-faltan { flex: 1; font-size: .75rem; color: var(--muted); }
+.fila-carro .fc-total {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.fila-carro.es-mejor .fc-total { color: var(--accent); font-size: 1.125rem; }
+.fila-carro .fc-apagado { color: #5E7183; font-weight: 600; }
+.fila-carro.es-parcial .fc-tienda { color: var(--muted); }
+
+.fc-detalle {
+  margin: -4px 0 4px;
+  font-size: .75rem;
+  color: #5E7183;
+}
+
+.chapa {
+  flex: none;
+  font-size: .625rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+
+/* ---------- detalle artículo por artículo ----------------------------------------- */
+
+.det-art { padding: 12px 0; border-top: 1px solid var(--line); }
+.det-art:first-of-type { border-top: 0; padding-top: 0; }
+
+.det-art .det-nombre {
+  display: block;
+  font-size: .9375rem;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.det-art .det-filas { padding-left: 2px; }
+
+/* ---------- histórico ------------------------------------------------------------ */
+
+.fila-hist {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.fila-hist:first-of-type { border-top: 0; }
+
+.fila-hist .fh-tienda { font-size: .875rem; font-weight: 600; min-width: 6em; }
+.fila-hist .fh-rango { flex: 1; font-size: .75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.fila-hist .fh-pct {
+  font-size: .875rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.fila-hist .fh-sube { color: var(--danger); }
+.fila-hist .fh-baja { color: var(--accent); }

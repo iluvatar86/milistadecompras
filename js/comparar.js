@@ -1,0 +1,253 @@
+/* ---------------------------------------------------------------------------
+   comparar.js — Decidir dónde comprar. No toca la pantalla ni la red: recibe
+   artículos y precios y devuelve números, así que se puede razonar sobre él
+   solo.
+
+   Hay DOS preguntas distintas y la app las responde por separado a propósito,
+   porque mezclarlas da consejos malos:
+
+   1. «¿Dónde está más barato ESTE artículo?» — útil cuando ya estás en un
+      súper, o para un artículo suelto.
+
+   2. «¿A qué súper voy con TODA la lista?» — casi siempre la que importa. No
+      vas a manejar a cinco supermercados por ahorrar ₡450, así que lo que
+      necesitas saber es qué carro completo sale más barato.
+
+   Y una regla de honestidad que atraviesa todo el archivo:
+
+   UN SUPERMERCADO QUE NO TIENE UN ARTÍCULO NO PUEDE GANAR POR ESO. Si sumaras
+   solo lo que sí vende, al que le faltan tres cosas le saldría el carro más
+   barato y ganaría la comparación siendo el peor sitio para ir. Por eso los
+   carros incompletos se apartan y se dice cuántos artículos les faltan.
+--------------------------------------------------------------------------- */
+
+(function (global) {
+  'use strict';
+
+  /* TRAMPA DE JAVASCRIPT, ya pisada una vez: Number(null) vale 0, y 0 pasa la
+     prueba de Number.isFinite. Escrito de la forma evidente
+     —Number.isFinite(Number(info.precio))— un precio ausente se convertía en
+     cero, y la app enseñaba «₡0,00/kg» en un arroz que ese supermercado ni
+     siquiera vende. Hay que descartar null y '' ANTES de convertir. */
+  function leerPrecio(info) {
+    if (!info) return null;
+    const bruto = info.precio;
+    if (bruto === null || bruto === undefined || bruto === '') return null;
+    const n = Number(bruto);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  /* Por qué una tienda no tiene precio, cuando ni siquiera aparece en la
+     respuesta guardada.
+
+     Distinguir esto importa: Auto Mercado no manda nada de un artículo que no
+     se ha emparejado con su catálogo, y decir «sin consultar» invitaba a pulsar
+     «Consultar precios» otra vez, que no lo arregla nunca. Lo que hay que hacer
+     es emparejarlo, y eso solo se sabe si el texto lo dice. */
+  function sinDato(tienda, art, guardado) {
+    if (tienda.id === 'automercado' && !art.amId) return 'sin emparejar';
+    if (!guardado) return 'sin consultar';
+    return 'no lo vende';
+  }
+
+  /* ---------- un artículo ----------------------------------------------------- */
+
+  /* Devuelve una fila por tienda activa, ordenadas de más barata a más cara, y
+     marca cuál es la mejor. Las tiendas sin precio van al final: son una
+     respuesta legítima («no lo vende»), no un error, pero no compiten. */
+  function porArticulo(art) {
+    const guardado = Store.preciosDe(art.id);
+    const tiendas = Store.tiendasActivas();
+
+    const filas = tiendas.map((t) => {
+      const info = (guardado && guardado.tiendas && guardado.tiendas[t.id]) || null;
+      const precio = leerPrecio(info);
+      const disponible = !!(info && info.hay && precio !== null);
+      return {
+        tienda: t,
+        precio: precio,
+        hay: disponible,
+        nota: (info && info.nota) || (info ? '' : sinDato(t, art, guardado)),
+        nombreEnTienda: (info && info.nombre) || '',
+        pasillo: (info && info.pasillo) || '',
+        porUnidad: precio !== null ? D.textoPorUnidad(precio, art.contenido, art.unidad) : ''
+      };
+    });
+
+    const compiten = filas.filter((f) => f.hay);
+    compiten.sort((a, b) => a.precio - b.precio);
+    const resto = filas.filter((f) => !f.hay);
+
+    const mejor = compiten.length ? compiten[0] : null;
+    const peor = compiten.length ? compiten[compiten.length - 1] : null;
+
+    /* TODAS las tiendas que empatan en el precio más bajo, no solo la primera.
+
+       Sin esto la app dice «más barato en Más x Menos» cuando la leche cuesta
+       ₡1.050 en tres supermercados: da a entender que hay que ir a ese, y es
+       falso. Un empate es una respuesta más útil que un ganador inventado,
+       porque significa «este artículo no decide nada, míralo por los otros». */
+    const mejores = mejor ? compiten.filter((f) => f.precio === mejor.precio) : [];
+
+    return {
+      articulo: art,
+      consultadoEn: guardado ? guardado.consultadoEn : null,
+      filas: compiten.concat(resto),
+      mejor: mejor,
+      mejores: mejores,
+      /* El ahorro se mide contra el MÁS CARO, no contra la media: es la cifra
+         que responde «¿cuánto me estoy ahorrando por no comprarlo en el peor
+         sitio?», que es la decisión real. */
+      ahorro: mejor && peor && peor.precio > mejor.precio ? peor.precio - mejor.precio : 0,
+      empate: mejores.length > 1
+    };
+  }
+
+  /* ---------- la lista entera --------------------------------------------------- */
+
+  /* Un 'carro' por supermercado: lo que costaría comprar ahí toda la lista.
+
+     Los que no tienen todo se apartan en 'incompletos' y llevan la lista de lo
+     que les falta, con nombres y todo — decir «le faltan 3» sin decir cuáles
+     obliga a ir a buscarlo a otra pantalla. */
+  function carros(pendientes) {
+    const tiendas = Store.tiendasActivas();
+
+    const todos = tiendas.map((t) => {
+      let total = 0;
+      const faltan = [];
+      const lleva = [];
+
+      pendientes.forEach((art) => {
+        const guardado = Store.preciosDe(art.id);
+        const info = guardado && guardado.tiendas ? guardado.tiendas[t.id] : null;
+        const precio = leerPrecio(info);
+        const cantidad = Math.max(1, Number(art.cantidad) || 1);
+
+        if (info && info.hay && precio !== null) {
+          total += precio * cantidad;
+          lleva.push({ art, precio, cantidad, subtotal: precio * cantidad });
+        } else {
+          faltan.push({ art, motivo: (info && info.nota) || 'sin consultar' });
+        }
+      });
+
+      return { tienda: t, total, lleva, faltan, completo: faltan.length === 0 };
+    });
+
+    const completos = todos.filter((c) => c.completo && c.lleva.length)
+      .sort((a, b) => a.total - b.total);
+    const incompletos = todos.filter((c) => !c.completo || !c.lleva.length)
+      .sort((a, b) => a.faltan.length - b.faltan.length || a.total - b.total);
+
+    return { completos, incompletos, todos };
+  }
+
+  /* Comprando cada cosa donde está más barata, sin importar cuántos súper haya
+     que visitar. Es el suelo teórico: nadie va a hacer esto, pero es la única
+     forma de saber CUÁNTO cuesta la comodidad de ir a un solo sitio. */
+  function repartido(pendientes) {
+    let total = 0;
+    const porTienda = {};
+    const sinPrecio = [];
+
+    pendientes.forEach((art) => {
+      const r = porArticulo(art);
+      const cantidad = Math.max(1, Number(art.cantidad) || 1);
+      if (!r.mejor) { sinPrecio.push(art); return; }
+      total += r.mejor.precio * cantidad;
+      const tid = r.mejor.tienda.id;
+      if (!porTienda[tid]) porTienda[tid] = { tienda: r.mejor.tienda, items: [], total: 0 };
+      porTienda[tid].items.push({ art, precio: r.mejor.precio, cantidad });
+      porTienda[tid].total += r.mejor.precio * cantidad;
+    });
+
+    return {
+      total,
+      sinPrecio,
+      paradas: Object.keys(porTienda).map((k) => porTienda[k]).sort((a, b) => b.total - a.total)
+    };
+  }
+
+  /* El resumen que se enseña arriba del todo: la recomendación en una frase.
+
+     La recomendación por defecto es SIEMPRE un solo supermercado. Repartir la
+     compra solo se sugiere cuando el ahorro es de verdad, y el listón está
+     puesto en dos condiciones a la vez (₡2.000 y 5 %) porque cada una sola
+     falla: un 8 % de una lista de ₡3.000 son ₡240, y ₡2.000 sobre una compra
+     de ₡90.000 no justifica un segundo viaje. */
+  const AHORRO_MINIMO_COLONES = 2000;
+  const AHORRO_MINIMO_PCT = 5;
+
+  function recomendacion(pendientes) {
+    const c = carros(pendientes);
+    const r = repartido(pendientes);
+    const mejorCarro = c.completos[0] || null;
+
+    if (!mejorCarro) {
+      return { tipo: 'incompleto', carros: c, repartido: r };
+    }
+
+    const ahorro = mejorCarro.total - r.total;
+    const pct = D.porcentaje(ahorro, mejorCarro.total);
+    const valeLaPena = r.paradas.length > 1 &&
+      ahorro >= AHORRO_MINIMO_COLONES &&
+      pct >= AHORRO_MINIMO_PCT;
+
+    return {
+      tipo: valeLaPena ? 'repartir' : 'una-tienda',
+      mejorCarro,
+      segundo: c.completos[1] || null,
+      /* Cuánto se ahorra frente al segundo mejor: es lo que mide si la elección
+         importa. Si el segundo está ₡200 detrás, da igual a cuál vayas. */
+      ventaja: c.completos[1] ? c.completos[1].total - mejorCarro.total : 0,
+      ahorroRepartiendo: ahorro,
+      pctRepartiendo: pct,
+      carros: c,
+      repartido: r
+    };
+  }
+
+  /* ---------- cuánto cuesta una lista con nombre --------------------------------- */
+
+  /* Para la pantalla de «Otras listas»: cuánto costaría el queque, con los
+     precios que ya se conocen.
+
+     Se suma el precio MÁS BARATO de cada ingrediente, y se dice cuántos no
+     tienen precio todavía. Un total al que le faltan tres ingredientes se
+     quedaría corto sin avisar, y eso es peor que no dar ningún total. */
+  function costeDeLista(contenido) {
+    let total = 0;
+    let sinPrecio = 0;
+
+    contenido.forEach(({ articulo: art, cantidad }) => {
+      const r = porArticulo(art);
+      if (!r.mejor) { sinPrecio++; return; }
+      total += r.mejor.precio * Math.max(1, Number(cantidad) || 1);
+    });
+
+    return { total, sinPrecio, completo: sinPrecio === 0 && contenido.length > 0 };
+  }
+
+  /* ---------- de cuándo son estos precios -------------------------------------- */
+
+  /* El precio más viejo de la lista manda: si uno se consultó hace una semana,
+     el total de abajo no es de hoy por mucho que los otros catorce sí lo sean.
+     Enseñar la fecha del más reciente sería tranquilizador y falso. */
+  function frescura(pendientes) {
+    let masViejo = null;
+    let sinConsultar = 0;
+    pendientes.forEach((art) => {
+      const g = Store.preciosDe(art.id);
+      if (!g || !g.consultadoEn) { sinConsultar++; return; }
+      if (!masViejo || g.consultadoEn < masViejo) masViejo = g.consultadoEn;
+    });
+    return { masViejo, sinConsultar };
+  }
+
+  global.Comparar = {
+    porArticulo, carros, repartido, recomendacion, frescura, costeDeLista,
+    AHORRO_MINIMO_COLONES, AHORRO_MINIMO_PCT
+  };
+
+})(window);

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mi Lista de Compras</title>
+  <meta name="description" content="Lista de compras que compara precios entre supermercados de Costa Rica.">
+  <meta name="theme-color" content="#0C1116">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Mi Lista de Compras">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+  <div id="install" class="install-bar" hidden>
+    <span>Instálala en el móvil para abrirla como una app.</span>
+    <span class="install-actions">
+      <button type="button" class="install-yes">Instalar</button>
+      <button type="button" class="install-no">Ahora no</button>
+    </span>
+  </div>
+
+  <main id="screen" class="screen"></main>
+
+  <nav id="nav" class="nav" aria-label="Secciones"></nav>
+
+  <noscript>
+    <p style="padding:2rem;color:#E8EEF3">Mi Lista de Compras necesita JavaScript activado para funcionar.</p>
+  </noscript>
+
+  <script src="js/dom.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/precios.js"></script>
+  <script src="js/comparar.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
