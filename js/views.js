@@ -805,43 +805,93 @@
     }));
 
     const resultados = el('div.resultados');
-    const boton = el('button.btn', { type: 'button', text: 'Buscarlo en Auto Mercado' });
+
+    /* EL CAMPO SE PUEDE EDITAR, y no es un adorno.
+
+       Los dos supermercados nombran el mismo producto distinto —«Arroz Tío
+       Pelón 99% grano entero» contra «ARROZ BLANCO 99% TIO PELON»— y el
+       buscador de Auto Mercado exige todas las palabras. Con el nombre completo
+       hay artículos que devuelven cero y parece que no los vende.
+
+       La app manda además una consulta corta de respaldo (ver `consultaCorta`),
+       que rescata la mayoría de esos casos sola. Pero cuando ni así aparece, la
+       única salida es poder escribirlo a mano: un botón que busca siempre lo
+       mismo deja en un callejón sin salida. */
+    const campo = el('input', {
+      type: 'search',
+      value: art.nombre,
+      'aria-label': 'Qué buscar en Auto Mercado'
+    });
+
+    const boton = el('button.btn', { type: 'button', text: 'Buscar en Auto Mercado' });
 
     boton.addEventListener('click', async () => {
+      const texto = campo.value.trim();
+      if (texto.length < 3) { alert('Escribe al menos 3 letras.'); return; }
+
       boton.disabled = true;
       boton.textContent = 'Buscando…';
       D.clear(resultados);
       try {
-        const r = await Precios.buscar(art.nombre);
+        const r = await Precios.buscar(texto, consultaCorta(art));
         D.clear(resultados);
+
         if (!r.autoMercado.length) {
-          resultados.appendChild(el('p.muted', { text: 'Auto Mercado no parece tenerlo. Puedes dejarlo sin emparejar: se comparará entre los otros cuatro.' }));
-        } else {
-          r.autoMercado.forEach((p) => {
-            resultados.appendChild(el('button.res-fila', {
-              type: 'button',
-              onclick: () => {
-                Store.guardarArticulo(Object.assign({}, art, { amId: p.amId }));
-                App.render();
-              }
-            }, [
-              el('span.res-nombre', { text: p.nombre }),
-              el('span.res-sub', { text: p.presentacion || '' })
-            ]));
-          });
+          resultados.appendChild(el('p.muted', {
+            text: 'No apareció nada. Prueba con menos palabras —solo el producto y la marca, por ejemplo «arroz tío pelón»—, o déjalo sin emparejar: se comparará entre los otros cuatro.'
+          }));
+          return;
         }
+
+        if (r.amConRespaldo) {
+          resultados.appendChild(el('p.hint-box', {
+            text: 'Con el nombre completo no aparecía nada, así que se buscó «' + r.amConsulta +
+                  '». Los resultados son más amplios: fíjate bien en la presentación antes de elegir.'
+          }));
+        }
+
+        r.autoMercado.forEach((p) => {
+          resultados.appendChild(el('button.res-fila', {
+            type: 'button',
+            onclick: () => {
+              Store.guardarArticulo(Object.assign({}, art, { amId: p.amId }));
+              App.render();
+            }
+          }, [
+            el('span.res-nombre', { text: p.nombre }),
+            el('span.res-sub', { text: p.presentacion || '' })
+          ]));
+        });
       } catch (err) {
         D.clear(resultados);
         resultados.appendChild(aviso(err.message, 'malo'));
       } finally {
         boton.disabled = false;
-        boton.textContent = 'Buscarlo en Auto Mercado';
+        boton.textContent = 'Buscar en Auto Mercado';
       }
     });
 
+    tarjeta.appendChild(el('label.campo', [el('span', { text: 'Buscar' }), campo]));
     tarjeta.appendChild(boton);
     tarjeta.appendChild(resultados);
     return tarjeta;
+  }
+
+  /* La consulta de respaldo: la primera palabra del nombre (que casi siempre es
+     de qué producto se trata: «Arroz», «Leche», «Café»), la marca y el tamaño.
+
+     Se queda corta a propósito. El nombre completo ordena mejor los resultados
+     CUANDO encuentra algo, así que esta solo se usa si aquella devuelve cero:
+     comprobado que «Leche DOS PINOS 1 L» pone de primero un «LECHE COMPLEMENTO
+     CRE-C» que no es, mientras que el nombre completo acierta. */
+  function consultaCorta(art) {
+    const partes = [];
+    const primera = String(art.nombre || '').trim().split(/\s+/)[0];
+    if (primera) partes.push(primera);
+    if (art.marca) partes.push(art.marca);
+    if (art.contenido) partes.push(art.contenido + ' ' + art.unidad);
+    const texto = partes.join(' ').trim();
+    return texto.length >= 3 ? texto : '';
   }
 
   function tarjetaPreciosArticulo(art) {

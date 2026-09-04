@@ -93,12 +93,48 @@
 
      Juntarlas en una sola lista escondería justo la diferencia que el usuario
      necesita entender para saber por qué le pedimos dos toques y no uno. */
-  async function buscar(texto) {
-    const datos = await pedir(url('buscar') + '&q=' + encodeURIComponent(texto));
-    return {
-      conCodigo:   datos.conCodigo || [],
-      autoMercado: datos.autoMercado || []
+  /* `alternativa` es una consulta más corta que el intermediario usa SOLO si la
+     principal no encuentra nada en Auto Mercado. Hace falta porque los
+     supermercados nombran el mismo producto distinto y el buscador de Auto
+     Mercado exige todas las palabras: «Arroz Tío Pelón 99% grano entero» no
+     encuentra «ARROZ BLANCO 99% TIO PELON», porque «grano entero» no está ahí.
+     Va en la misma consulta, así que no cuesta tiempo. */
+  async function buscar(texto, alternativa) {
+    let direccion = url('buscar') + '&q=' + encodeURIComponent(texto);
+    if (alternativa) direccion += '&qAlt=' + encodeURIComponent(alternativa);
+
+    const datos = await pedir(direccion);
+    const salida = {
+      conCodigo:     datos.conCodigo || [],
+      autoMercado:   datos.autoMercado || [],
+      amConRespaldo: !!datos.amConRespaldo,
+      amConsulta:    datos.amConsulta || texto
     };
+
+    /* El respaldo lo hace el intermediario en una sola tanda, sin coste. Pero un
+       intermediario que todavía no se haya actualizado ignora `qAlt` sin decir
+       nada, y entonces el emparejamiento seguiría fallando.
+
+       Por eso la app reintenta por su cuenta cuando ve que no vino nada y el
+       respaldo no llegó a usarse. Cuesta una consulta más —y solo en el caso que
+       ya estaba fallando—, y a cambio esto funciona con el intermediario viejo y
+       con el nuevo. Cuando el de Pablo se actualice, esta rama deja de
+       ejecutarse sola: no hay nada que quitar después. */
+    if (!salida.autoMercado.length && alternativa && alternativa !== texto && !salida.amConRespaldo) {
+      try {
+        const segundo = await pedir(url('buscar') + '&q=' + encodeURIComponent(alternativa));
+        if (segundo.autoMercado && segundo.autoMercado.length) {
+          salida.autoMercado = segundo.autoMercado;
+          salida.amConRespaldo = true;
+          salida.amConsulta = alternativa;
+        }
+      } catch (err) {
+        // El reintento es un extra: si falla, se devuelve lo que ya había.
+        console.warn('El reintento en Auto Mercado no funcionó:', err.message);
+      }
+    }
+
+    return salida;
   }
 
   /* ---------- consultar precios ---------------------------------------------- */
