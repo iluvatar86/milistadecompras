@@ -82,6 +82,41 @@
     { id: '24', nombre: 'AM Belén' }
   ];
 
+  /* Las categorías, EN EL ORDEN EN QUE SE RECORRE UN SUPERMERCADO.
+
+     Ese orden no es decorativo: es la razón de que existan. Con la lista
+     agrupada así se hace la compra de una pasada —primero frutas, al final
+     limpieza— en vez de cruzar la tienda de un lado a otro. Por eso el orden lo
+     fija esta lista y no el alfabeto.
+
+     'otros' va siempre al final y no se puede borrar: es donde caen los
+     artículos de una categoría que se elimine. */
+  const CATEGORIAS_DE_FABRICA = [
+    { id: 'frutas-verduras',  nombre: 'Frutas y verduras' },
+    { id: 'carnes',           nombre: 'Carnes y pescado' },
+    { id: 'lacteos',          nombre: 'Lácteos y huevos' },
+    { id: 'panaderia',        nombre: 'Panadería' },
+    { id: 'congelados',       nombre: 'Congelados' },
+    { id: 'abarrotes',        nombre: 'Abarrotes' },
+    { id: 'bebidas',          nombre: 'Bebidas' },
+    { id: 'limpieza',         nombre: 'Limpieza' },
+    { id: 'cuidado-personal', nombre: 'Cuidado personal' },
+    { id: 'mascotas',         nombre: 'Mascotas' },
+    { id: 'otros',            nombre: 'Otros' }
+  ];
+
+  /* Las categorías se copian a los datos del usuario la primera vez y ahí se
+     quedan. Sin esto, quien ya tuviera la app instalada no vería nunca una
+     categoría nueva de fábrica.
+
+     `sembrarCategorias` añade las que falten UNA SOLA VEZ POR NÚMERO, y ese
+     «una sola vez» es lo importante: si se ejecutara en cada arranque, una
+     categoría borrada a propósito resucitaría siempre.
+
+     AL AÑADIR CATEGORÍAS DE FÁBRICA EN EL FUTURO, SUBIR SEMILLA.
+     (Es la misma máquina que en ControlGastos, y allí hizo falta de verdad.) */
+  const SEMILLA = 1;
+
   const UNIDADES = [
     { id: 'mL', nombre: 'mililitros (mL)' },
     { id: 'L',  nombre: 'litros (L)' },
@@ -94,19 +129,31 @@
     url: '',            // dirección del intermediario, termina en /exec
     clave: '',          // la misma que se puso en el script
     sucursalAM: '06',   // AM Moravia, el mismo de fábrica que usa su web
-    tiendas: { masxmenos: true, walmart: true, maxipali: true, megasuper: true, automercado: true }
+    tiendas: { masxmenos: true, walmart: true, maxipali: true, megasuper: true, automercado: true },
+    ordenLista: 'categoria',  // 'categoria' | 'alfabetico'
+    semilla: 0                // hasta qué número de categorías de fábrica se sembró
   };
 
   let data = null;
 
   /* ---------- cargar y guardar ---------------------------------------------- */
 
+  /* OJO: los datos nuevos también hay que sembrarlos.
+
+     Estuvo mal a la primera y no dio ningún error: `sembrarCategorias` se
+     llamaba solo desde `migrar`, que únicamente corre cuando YA hay algo
+     guardado. En una instalación nueva la lista de categorías quedaba vacía,
+     así que todos los artículos salían en «Otros» —la app adivinaba bien la
+     categoría, pero no existía ninguna con ese nombre que enseñar—. Se ve
+     exactamente igual que si la adivinanza estuviera rota. */
   function vacio() {
-    return {
+    const d = {
       v: VERSION_DATOS,
-      articulos: [], listas: [], precios: {}, historial: [],
+      articulos: [], listas: [], categorias: [], precios: {}, historial: [],
       ajustes: clonar(AJUSTES_DE_FABRICA)
     };
+    sembrarCategorias(d);
+    return d;
   }
 
   function clonar(x) { return JSON.parse(JSON.stringify(x)); }
@@ -141,12 +188,35 @@
     if (!Array.isArray(d.articulos)) d.articulos = [];
     // Las copias guardadas antes de que existieran las listas no la traen.
     if (!Array.isArray(d.listas)) d.listas = [];
+    if (!Array.isArray(d.categorias)) d.categorias = [];
     if (!d.precios || typeof d.precios !== 'object') d.precios = {};
     if (!Array.isArray(d.historial)) d.historial = [];
     d.ajustes = Object.assign(clonar(AJUSTES_DE_FABRICA), d.ajustes || {});
     d.ajustes.tiendas = Object.assign(clonar(AJUSTES_DE_FABRICA.tiendas), d.ajustes.tiendas || {});
     d.v = VERSION_DATOS;
+    sembrarCategorias(d);
+
+    /* Los artículos guardados antes de que existieran las categorías no traen
+       ninguna. Dejarlos así los amontonaría TODOS en «Otros» y la agrupación
+       por secciones no serviría de nada justo el día en que se estrena. Se les
+       adivina una, que es lo mismo que se hace con los nuevos, y se puede
+       corregir en la ficha. */
+    d.articulos.forEach((a) => {
+      if (!a.categoria) a.categoria = adivinarCategoria(a.nombre);
+    });
+
     return d;
+  }
+
+  /* Añade las categorías de fábrica que falten, y solo una vez por número de
+     semilla. Ver el comentario de SEMILLA arriba: ejecutarlo en cada arranque
+     devolvería a la vida las que se hayan borrado a propósito. */
+  function sembrarCategorias(d) {
+    if ((d.ajustes.semilla || 0) >= SEMILLA) return;
+    CATEGORIAS_DE_FABRICA.forEach((c) => {
+      if (!d.categorias.some((x) => x.id === c.id)) d.categorias.push({ id: c.id, nombre: c.nombre });
+    });
+    d.ajustes.semilla = SEMILLA;
   }
 
   /* ---------- artículos ------------------------------------------------------ */
@@ -160,12 +230,21 @@
     return load().articulos.find((a) => a.id === id) || null;
   }
 
-  /* Los pendientes se ordenan por cuándo se marcaron, el más reciente arriba:
-     lo que acabas de recordar que falta es lo que estás pensando ahora. */
+  /* Los pendientes van EN ORDEN ALFABÉTICO.
+
+     Antes salían por cuándo se marcaron, el más reciente arriba, con la idea de
+     que lo que acabas de recordar es lo que tienes en la cabeza. Pero eso vale
+     mientras escribes la lista, no mientras haces la compra: en el súper la
+     lista se lee entera muchas veces buscando «¿ya cogí el café?», y para eso el
+     orden tiene que ser el mismo siempre. Un orden que cambia solo cada vez que
+     marcas algo obliga a releerla de arriba abajo.
+
+     La agrupación por categoría se hace en la pantalla, sobre esta misma lista,
+     así que dentro de cada grupo el orden también es alfabético. */
   function pendientes() {
     return load().articulos
       .filter((a) => a.pendiente)
-      .sort((a, b) => String(b.marcadoEn || '').localeCompare(String(a.marcadoEn || '')));
+      .sort((a, b) => D.normal(a.nombre).localeCompare(D.normal(b.nombre), 'es'));
   }
 
   function guardarArticulo(art) {
@@ -178,6 +257,7 @@
       marca:     String(art.marca || '').trim(),
       contenido: Number(art.contenido) || null,
       unidad:    art.unidad || 'unidad',
+      categoria: art.categoria || 'otros',
       imagen:    art.imagen || '',
       pendiente: !!art.pendiente,
       cantidad:  Math.max(1, Number(art.cantidad) || 1),
@@ -223,6 +303,127 @@
     if (!a) return;
     a.cantidad = Math.max(1, Number(n) || 1);
     save();
+  }
+
+  /* ---------- categorías ---------------------------------------------------------- */
+
+  /* EL ORDEN DE ESTA LISTA ES SIGNIFICATIVO Y ROMPERLO NO DA ERROR: solo empieza
+     a etiquetar mal. Se devuelve la primera categoría que encaje, así que lo
+     específico va antes que lo general.
+
+     Los choques que hay hoy, y que hay que respetar si se toca:
+
+     - «jabón de tocador» antes que «jabón» — si no, el jabón de baño acaba en
+       Limpieza. (Un jabón a secas sí va a Limpieza: es lo que uno espera.)
+     - «pasta dental» antes que «pasta» — o el dentífrico acaba en Abarrotes.
+     - «papa frita» antes que «papa» — o las papas fritas acaban en verduras.
+     - «leche condensada» está en Abarrotes, pero «leche» en Lácteos va antes,
+       así que gana Lácteos. Es discutible y se dejó así a propósito: la leche
+       condensada se busca donde la leche.
+
+     Es la misma lección que las PISTAS de ControlGastos, donde poner «UBER» a
+     secas se comía las tres categorías de Uber.
+
+     Vive aquí y no en views.js porque `migrar` la necesita para etiquetar los
+     artículos que se guardaron antes de que existieran las categorías.
+
+     Adivinar mal no es grave: la categoría se ve y se cambia en la ficha del
+     artículo. Lo grave sería tener que etiquetar cincuenta productos a mano el
+     primer día. */
+  const PISTAS = [
+    ['cuidado-personal', ['jabon de tocador', 'jabon de bano', 'jabon liquido para manos',
+      'pasta dental', 'crema dental', 'cepillo dental', 'hilo dental', 'enjuague bucal',
+      'shampoo', 'champu', 'acondicionador', 'desodorante', 'antitranspirante',
+      'toalla sanitaria', 'protector diario', 'tampon', 'panal', 'toallita humeda',
+      'afeitar', 'rasuradora', 'talco', 'crema corporal', 'bloqueador', 'algodon', 'hisopo']],
+    ['mascotas', ['perro', 'gato', 'mascota', 'cachorro', 'arena sanitaria']],
+    ['congelados', ['congelado', 'congelada', 'helado', 'nugget', 'papa frita', 'pizza congelada']],
+    ['lacteos', ['leche', 'yogurt', 'yoghurt', 'queso', 'natilla', 'mantequilla', 'margarina',
+      'crema dulce', 'crema agria', 'huevo', 'huevos', 'cuajada', 'kefir']],
+    ['frutas-verduras', ['manzana', 'banano', 'platano', 'tomate', 'cebolla', 'papa', 'zanahoria',
+      'lechuga', 'aguacate', 'limon', 'naranja', 'pina', 'sandia', 'papaya', 'melon', 'brocoli',
+      'coliflor', 'chile', 'ajo', 'apio', 'culantro', 'cilantro', 'uva', 'fresa', 'mango',
+      'pepino', 'yuca', 'camote', 'espinaca', 'repollo', 'vainica', 'chayote']],
+    ['carnes', ['pollo', 'carne', 'res', 'cerdo', 'lomo', 'bistec', 'costilla', 'chuleta',
+      'pescado', 'filete', 'tilapia', 'camaron', 'jamon', 'salchicha', 'chorizo', 'mortadela',
+      'tocineta', 'tocino', 'pavo']],
+    ['panaderia', ['pan ', 'pan integral', 'baguette', 'tortilla', 'bollo', 'croissant',
+      'reposteria', 'queque', 'bizcocho']],
+    ['bebidas', ['agua', 'gaseosa', 'refresco', 'jugo', 'nectar', 'cerveza', 'vino', 'licor',
+      'ron ', 'whisky', 'vodka', 'energizante', 'gatorade', 'coca cola', 'pepsi', 'fresco']],
+    ['abarrotes', ['arroz', 'frijol', 'azucar', 'sal ', 'aceite', 'vinagre', 'pasta',
+      'espagueti', 'macarrones', 'harina', 'atun', 'sardina', 'salsa', 'ketchup', 'mayonesa',
+      'mostaza', 'cafe', 'cereal', 'avena', 'galleta', 'maiz', 'lenteja', 'garbanzo',
+      'consome', 'caldo', 'condimento', 'canela', 'especias', 'miel', 'mermelada',
+      'chocolate', 'sopa', 'palomitas']],
+    ['limpieza', ['detergente', 'jabon', 'cloro', 'desinfectante', 'lavaplatos', 'suavizante',
+      'escoba', 'esponja', 'servilleta', 'papel higienico', 'papel toalla', 'bolsa de basura',
+      'limpiador', 'limpiavidrios', 'ambientador', 'insecticida', 'guantes', 'trapeador']]
+  ];
+
+  function adivinarCategoria(nombre) {
+    const texto = ' ' + D.normal(nombre) + ' ';
+    for (let i = 0; i < PISTAS.length; i++) {
+      const cat = PISTAS[i][0];
+      const palabras = PISTAS[i][1];
+      for (let j = 0; j < palabras.length; j++) {
+        // Con espacio delante para no encontrar 'sal' dentro de 'salsa'.
+        if (texto.indexOf(' ' + palabras[j]) >= 0) return cat;
+      }
+    }
+    return 'otros';
+  }
+
+  /* Se devuelven en el orden en que están guardadas —el del recorrido del
+     supermercado— y no por nombre. 'otros' se empuja al final aunque se haya
+     añadido algo después: es el cajón de sastre y ahí es donde se espera. */
+  function categorias() {
+    const lista = load().categorias.slice();
+    const i = lista.findIndex((c) => c.id === 'otros');
+    if (i >= 0) lista.push(lista.splice(i, 1)[0]);
+    return lista;
+  }
+
+  function categoria(id) {
+    return load().categorias.find((c) => c.id === id) || null;
+  }
+
+  function nombreDeCategoria(id) {
+    const c = categoria(id);
+    return c ? c.nombre : 'Otros';
+  }
+
+  function agregarCategoria(nombre) {
+    const d = load();
+    const limpio = String(nombre || '').trim();
+    if (!limpio) return null;
+
+    /* El id sale del nombre pero NO es el nombre: si algún día se permite
+       renombrar, los artículos siguen apuntando al mismo sitio. */
+    let id = D.normal(limpio).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (!id) return null;
+    if (d.categorias.some((c) => c.id === id)) return categoria(id);
+
+    // 'otros' se mantiene el último; la nueva entra justo antes.
+    const i = d.categorias.findIndex((c) => c.id === 'otros');
+    const nueva = { id, nombre: limpio };
+    if (i >= 0) d.categorias.splice(i, 0, nueva); else d.categorias.push(nueva);
+    save();
+    return nueva;
+  }
+
+  /* Borrar una categoría NO borra artículos: pasan a «Otros». Perder productos
+     por reorganizar las etiquetas sería un castigo absurdo. */
+  function borrarCategoria(id) {
+    if (id === 'otros') return;
+    const d = load();
+    d.categorias = d.categorias.filter((c) => c.id !== id);
+    d.articulos.forEach((a) => { if (a.categoria === id) a.categoria = 'otros'; });
+    save();
+  }
+
+  function cuantosEn(id) {
+    return load().articulos.filter((a) => (a.categoria || 'otros') === id).length;
   }
 
   /* ---------- otras listas ------------------------------------------------------ */
@@ -460,8 +661,10 @@
   }
 
   global.Store = {
-    TIENDAS, UNIDADES, SUCURSALES_AM,
+    TIENDAS, UNIDADES, SUCURSALES_AM, CATEGORIAS_DE_FABRICA,
     load, save,
+    categorias, categoria, nombreDeCategoria, agregarCategoria, borrarCategoria, cuantosEn,
+    adivinarCategoria,
     articulos, articulo, guardarArticulo, borrarArticulo, porEan,
     pendientes, marcarPendiente, ponerCantidad,
     listas, listaDe, guardarLista, borrarLista,

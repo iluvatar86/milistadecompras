@@ -325,6 +325,71 @@ input::placeholder { color: #5E7183; }
   letter-spacing: -.02em;
 }
 
+/* ---------- cómo se ordena la lista ------------------------------------------ */
+
+.orden { display: flex; gap: 4px; flex: none; }
+
+.orden-btn {
+  border: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: .6875rem;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.orden-btn.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Cabecera de cada sección del súper dentro de la lista. Va discreta: separa,
+   no compite con los nombres de los artículos. */
+.grupo {
+  margin: 14px 0 -2px;
+  font-size: .6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--muted);
+}
+
+.grupo:first-of-type { margin-top: 0; }
+
+/* Después de una cabecera, la primera fila no lleva la línea de arriba: la
+   cabecera ya separa, y las dos juntas se ven sucias. */
+.grupo + .fila-pendiente { border-top: 0; }
+
+/* ---------- categorías en Ajustes --------------------------------------------- */
+
+.fila-cat {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.fila-cat:first-of-type { border-top: 0; }
+
+.fila-cat .fc-nombre { flex: 1; font-size: .9375rem; }
+
+.fila-cat .cat-quitar {
+  flex: none;
+  width: 30px; height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* ---------- fila de artículo pendiente -------------------------------------- */
 
 .fila-pendiente {

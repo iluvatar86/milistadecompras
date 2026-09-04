@@ -121,19 +121,53 @@
     caja.appendChild(tarjetaRecomendacion(pendientes));
 
     // --- los artículos pendientes --------------------------------------------
-    const tarjeta = el('section.card', [
-      el('div.card-head', [el('h2.card-title', { text: 'Por comprar' })])
-    ]);
-
-    pendientes.forEach((art) => {
-      const r = Comparar.porArticulo(art);
-      tarjeta.appendChild(filaPendiente(art, r));
-    });
-
-    caja.appendChild(tarjeta);
+    caja.appendChild(tarjetaPorComprar(pendientes));
     caja.appendChild(el('a.btn.btn-block', { href: '#/despensa', text: 'Agregar algo más' }));
 
     return caja;
+  }
+
+  /* Dos formas de ordenar la misma lista, y las dos sirven para algo distinto:
+
+     - POR CATEGORÍA es la de hacer la compra: recorres la tienda por secciones
+       —frutas primero, limpieza al final— en vez de cruzarla de un lado a otro.
+       Por eso es la de fábrica, y por eso el orden de los grupos lo fija
+       `CATEGORIAS_DE_FABRICA` y no el alfabeto.
+     - ALFABÉTICO es la de buscar: «¿está el café en la lista?».
+
+     Dentro de cada grupo el orden es alfabético igualmente, así que las dos
+     vistas son estables: nada se mueve de sitio al marcar un artículo. */
+  function tarjetaPorComprar(pendientes) {
+    const modo = Store.ajustes().ordenLista === 'alfabetico' ? 'alfabetico' : 'categoria';
+
+    const boton = (id, texto) => el('button.orden-btn' + (modo === id ? '.is-active' : ''), {
+      type: 'button', text: texto,
+      'aria-pressed': modo === id ? 'true' : 'false',
+      onclick: () => { Store.guardarAjustes({ ordenLista: id }); App.render(); }
+    });
+
+    const tarjeta = el('section.card', [
+      el('div.card-head', [
+        el('h2.card-title', { text: 'Por comprar' }),
+        el('div.orden', [boton('categoria', 'Por sección'), boton('alfabetico', 'A–Z')])
+      ])
+    ]);
+
+    if (modo === 'alfabetico') {
+      pendientes.forEach((art) => tarjeta.appendChild(filaPendiente(art, Comparar.porArticulo(art))));
+      return tarjeta;
+    }
+
+    /* Se recorren las categorías en su orden y se saca solo las que tengan algo.
+       Enseñar «Mascotas (0)» sería ocupar sitio para decir que no hay nada. */
+    Store.categorias().forEach((cat) => {
+      const dentro = pendientes.filter((a) => (a.categoria || 'otros') === cat.id);
+      if (!dentro.length) return;
+      tarjeta.appendChild(el('h3.grupo', { text: cat.nombre }));
+      dentro.forEach((art) => tarjeta.appendChild(filaPendiente(art, Comparar.porArticulo(art))));
+    });
+
+    return tarjeta;
   }
 
   function filaPendiente(art, r) {
@@ -355,7 +389,7 @@
           onclick: () => { Store.marcarPendiente(art.id, true); App.render(); }
         });
 
-    const detalles = [];
+    const detalles = [Store.nombreDeCategoria(art.categoria)];
     if (art.marca) detalles.push(art.marca);
     if (art.contenido) detalles.push(art.contenido + ' ' + art.unidad);
     if (!art.amId) detalles.push('sin Auto Mercado');
@@ -487,7 +521,8 @@
       marca:     producto.marca,
       imagen:    producto.imagen,
       contenido: adivinado.contenido || null,
-      unidad:    adivinado.unidad || 'unidad'
+      unidad:    adivinado.unidad || 'unidad',
+      categoria: Store.adivinarCategoria(producto.nombre)
     });
 
     if (listaId) {
@@ -945,6 +980,10 @@
     const unidad = el('select', { 'aria-label': 'Unidad' },
       Store.UNIDADES.map((u) => el('option', { value: u.id, selected: u.id === art.unidad, text: u.nombre })));
 
+    const categoria = el('select', { 'aria-label': 'Categoría' },
+      Store.categorias().map((c) =>
+        el('option', { value: c.id, selected: c.id === (art.categoria || 'otros'), text: c.nombre })));
+
     const guardar = el('button.btn', {
       type: 'button', text: 'Guardar cambios',
       onclick: () => {
@@ -953,7 +992,8 @@
         Store.guardarArticulo(Object.assign({}, art, {
           nombre: n,
           contenido: contenido.value ? Number(contenido.value) : null,
-          unidad: unidad.value
+          unidad: unidad.value,
+          categoria: categoria.value
         }));
         App.render();
       }
@@ -962,6 +1002,8 @@
     return el('section.card', [
       el('h2.card-title', { text: 'Datos' }),
       el('label.campo', [el('span', { text: 'Nombre' }), nombre]),
+      el('label.campo', [el('span', { text: 'Categoría' }), categoria]),
+      el('p.hint', { text: 'La categoría la adivina la app por el nombre, y agrupa la lista por secciones del súper. Si se equivocó, cámbiala aquí.' }),
       el('div.campo-doble', [
         el('label.campo', [el('span', { text: 'Contenido' }), contenido]),
         el('label.campo', [el('span', { text: 'Unidad' }), unidad])
@@ -1124,6 +1166,7 @@
     caja.appendChild(tarjetaIntermediario(a));
     caja.appendChild(tarjetaSucursal(a));
     caja.appendChild(tarjetaTiendas(a));
+    caja.appendChild(tarjetaCategorias());
     caja.appendChild(tarjetaCopia());
     caja.appendChild(tarjetaVersion());
 
@@ -1214,6 +1257,55 @@
       tarjeta.appendChild(el('label.fila-check', [casilla, el('span', { text: t.nombre })]));
     });
 
+    return tarjeta;
+  }
+
+  /* Las categorías van en el orden en que se recorre el súper, no por nombre, y
+     ese orden se enseña tal cual para que se entienda de dónde sale el de la
+     lista. */
+  function tarjetaCategorias() {
+    const tarjeta = el('section.card', [
+      el('h2.card-title', { text: 'Categorías' }),
+      el('p.muted', {
+        text: 'Agrupan la lista por secciones del súper, en este mismo orden. La app adivina la categoría de cada artículo por su nombre y se puede corregir en su ficha.'
+      })
+    ]);
+
+    Store.categorias().forEach((c) => {
+      const cuantos = Store.cuantosEn(c.id);
+      tarjeta.appendChild(el('div.fila-cat', [
+        el('span.fc-nombre', { text: c.nombre }),
+        el('span.ref', { text: cuantos ? String(cuantos) : '' }),
+        c.id === 'otros'
+          ? el('span.ref', { text: 'fija' })
+          : el('button.cat-quitar', {
+              type: 'button', text: '×', 'aria-label': 'Quitar ' + c.nombre,
+              onclick: () => {
+                /* Se dice cuántos artículos se mueven ANTES de borrar. «¿Borrar
+                   Limpieza?» a secas no deja decidir nada. */
+                const aviso = cuantos
+                  ? '¿Quitar «' + c.nombre + '»?\n\nSus ' + cuantos +
+                    (cuantos === 1 ? ' artículo pasará' : ' artículos pasarán') + ' a «Otros». No se borra ninguno.'
+                  : '¿Quitar «' + c.nombre + '»?';
+                if (!confirm(aviso)) return;
+                Store.borrarCategoria(c.id);
+                App.render();
+              }
+            })
+      ]));
+    });
+
+    tarjeta.appendChild(el('button.btn', {
+      type: 'button', text: '+ Añadir una categoría',
+      onclick: () => {
+        const nombre = prompt('¿Cómo se llama?\n\nPor ejemplo: Bebé, Farmacia, Fiesta');
+        if (!nombre || !nombre.trim()) return;
+        Store.agregarCategoria(nombre.trim());
+        App.render();
+      }
+    }));
+
+    tarjeta.appendChild(el('p.hint', { text: 'Quitar una categoría nunca borra artículos: pasan a «Otros».' }));
     return tarjeta;
   }
 
