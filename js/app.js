@@ -138,27 +138,59 @@
     });
   }
 
+  /* La barra de «instálala en el móvil» tiene que desaparecer y NO VOLVER en
+     tres casos, y cada uno hacía falta por separado:
+
+     1. Ya se está usando la app instalada. Se detecta con `display-mode:
+        standalone`, que es lo único fiable: dentro de la app instalada el
+        navegador ya no ofrece instalarla, así que sin esta comprobación la
+        barra se quedaba ahí para siempre, sugiriendo algo ya hecho.
+     2. Se acaba de instalar (evento `appinstalled`).
+     3. Se dijo «ahora no». Antes solo se ocultaba hasta la siguiente vez que se
+        abriera la app, así que volvía a salir un día sí y otro también: no era
+        una respuesta, era un aplazamiento de unos minutos.
+
+     Los dos últimos se recuerdan en el teléfono. */
+
+  const CLAVE_INSTALL = 'milistadecompras.instalar-oculto';
   let installPrompt = null;
   const installBar = document.getElementById('install');
+
+  function yaInstalada() {
+    return window.matchMedia('(display-mode: standalone)').matches ||
+           window.navigator.standalone === true;
+  }
+
+  function ocultarBarra(paraSiempre) {
+    installBar.hidden = true;
+    if (paraSiempre) {
+      try { localStorage.setItem(CLAVE_INSTALL, '1'); } catch (err) { /* da igual */ }
+    }
+  }
+
+  function sePuedeOfrecer() {
+    if (yaInstalada()) return false;
+    try { return localStorage.getItem(CLAVE_INSTALL) !== '1'; } catch (err) { return true; }
+  }
 
   window.addEventListener('beforeinstallprompt', (event) => {
     event.preventDefault();
     installPrompt = event;
-    installBar.hidden = false;
+    if (sePuedeOfrecer()) installBar.hidden = false;
   });
 
   installBar.querySelector('button.install-yes').addEventListener('click', () => {
-    installBar.hidden = true;
+    ocultarBarra(false);
     if (!installPrompt) return;
     installPrompt.prompt();
     installPrompt = null;
   });
 
   installBar.querySelector('button.install-no').addEventListener('click', () => {
-    installBar.hidden = true;
+    ocultarBarra(true);
   });
 
-  window.addEventListener('appinstalled', () => { installBar.hidden = true; });
+  window.addEventListener('appinstalled', () => { ocultarBarra(true); });
 
   global.App = { render: render };
 

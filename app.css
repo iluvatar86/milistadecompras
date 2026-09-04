@@ -34,6 +34,19 @@
 
 * { box-sizing: border-box; }
 
+/* EL ATRIBUTO `hidden` DE HTML NO PUEDE CONTRA UN `display` DE UNA CLASE.
+
+   `[hidden] { display: none }` viene del navegador y lo gana cualquier regla
+   con clase: `.install-bar { display: flex }` deja la barra visible por mucho
+   que el HTML diga `hidden`. Pasó de verdad — la barra de «instálala en el
+   móvil» salía SIEMPRE, incluso dentro de la app ya instalada.
+
+   Esta regla lo arregla de raíz y para todo lo que se añada después. En
+   ControlGastos se fue apagando clase por clase (`.conversion[hidden]`,
+   `.sugerencias[hidden]`…), que funciona pero hay que acordarse cada vez, y
+   olvidarse no da ningún error: simplemente algo se queda a la vista. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   padding: 0;
