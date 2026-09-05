@@ -154,7 +154,7 @@
     ]);
 
     if (modo === 'alfabetico') {
-      pendientes.forEach((art) => tarjeta.appendChild(filaPendiente(art, Comparar.porArticulo(art))));
+      pendientes.forEach((art) => agregarPendiente(tarjeta, art));
       return tarjeta;
     }
 
@@ -164,39 +164,73 @@
       const dentro = pendientes.filter((a) => (a.categoria || 'otros') === cat.id);
       if (!dentro.length) return;
       tarjeta.appendChild(el('h3.grupo', { text: cat.nombre }));
-      dentro.forEach((art) => tarjeta.appendChild(filaPendiente(art, Comparar.porArticulo(art))));
+      dentro.forEach((art) => agregarPendiente(tarjeta, art));
     });
 
     return tarjeta;
   }
 
-  function filaPendiente(art, r) {
+  /* La fila de un pendiente y, debajo, su panel de «¿y esto qué fue?».
+
+     EL ✓ YA NO SACA EL ARTÍCULO DE LA LISTA DE UN TOQUE: pregunta antes si se
+     compró o si simplemente sobra. Los dos casos existen —a veces se tacha algo
+     porque apareció en la alacena, o porque se cambió de idea— y hasta ahora la
+     app los trataba igual. De esa diferencia sale el historial de compras, así
+     que confundirlos lo llenaría de compras que no ocurrieron.
+
+     El panel se construye con la fila y el ✓ solo lo enciende y lo apaga: NO se
+     llama a App.render() para abrirlo. Rehacer la pantalla al tocar el ✓ haría
+     saltar el scroll en mitad de la lista. Es la misma máquina que las filas
+     desplegables de Comparar. */
+  function agregarPendiente(tarjeta, art) {
+    const r = Comparar.porArticulo(art);
     const cantidad = Math.max(1, Number(art.cantidad) || 1);
 
-    const menos = el('button.cant-btn', {
-      type: 'button', text: '−', 'aria-label': 'Uno menos',
-      onclick: () => { Store.ponerCantidad(art.id, cantidad - 1); App.render(); }
-    });
-    const mas = el('button.cant-btn', {
-      type: 'button', text: '+', 'aria-label': 'Uno más',
-      onclick: () => { Store.ponerCantidad(art.id, cantidad + 1); App.render(); }
+    /* La diferencia entre los dos botones no se ve en sus nombres, así que se
+       dice. Sin esta línea, «Quitar» parece la forma corta de lo mismo. */
+    const eleccion = el('div.fila-elegir', { hidden: true }, [
+      el('p.fe-texto', { text: 'Solo «Comprado» cuenta para el historial.' }),
+      el('button.fe-btn.fe-si', {
+        type: 'button', text: 'Comprado',
+        onclick: () => { Store.marcarComprado(art.id); App.render(); }
+      }),
+      el('button.fe-btn', {
+        type: 'button', text: 'Quitar',
+        onclick: () => { Store.marcarPendiente(art.id, false); App.render(); }
+      })
+    ]);
+
+    const listo = el('button.fp-listo', {
+      type: 'button', text: '✓', 'aria-label': 'Ya no lo necesito', 'aria-expanded': 'false'
     });
 
-    return el('div.fila-pendiente', [
+    listo.addEventListener('click', () => {
+      const abrir = eleccion.hidden;
+      eleccion.hidden = !abrir;
+      listo.classList.toggle('is-abierto', abrir);
+      listo.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+    });
+
+    tarjeta.appendChild(el('div.fila-pendiente', [
       el('div.fp-datos', [
         el('a.fp-nombre', { href: '#/articulo/' + art.id, text: art.nombre }),
         el('p.fp-precio', [textoMejor(r, cantidad)])
       ]),
       el('div.fp-cant', [
-        menos,
+        el('button.cant-btn', {
+          type: 'button', text: '−', 'aria-label': 'Uno menos',
+          onclick: () => { Store.ponerCantidad(art.id, cantidad - 1); App.render(); }
+        }),
         el('span.cant-num', { text: String(cantidad) }),
-        mas
+        el('button.cant-btn', {
+          type: 'button', text: '+', 'aria-label': 'Uno más',
+          onclick: () => { Store.ponerCantidad(art.id, cantidad + 1); App.render(); }
+        })
       ]),
-      el('button.fp-listo', {
-        type: 'button', text: '✓', 'aria-label': 'Ya lo compré',
-        onclick: () => { Store.marcarPendiente(art.id, false); App.render(); }
-      })
-    ]);
+      listo
+    ]));
+
+    tarjeta.appendChild(eleccion);
   }
 
   /* «Más barato en Walmart: ₡2.700», o «₡1.050 en Más x Menos, Walmart y Maxi
@@ -412,6 +446,14 @@
     const detalles = [Store.nombreDeCategoria(art.categoria)];
     if (art.marca) detalles.push(art.marca);
     if (art.contenido) detalles.push(art.contenido + ' ' + art.unidad);
+
+    /* La frecuencia se enseña aquí, en la fila, y no solo dentro de la ficha:
+       la despensa es donde se decide qué marcar, y «cada 12 días» al lado del
+       nombre es justo el dato que ayuda a decidirlo. Solo sale cuando está
+       medida de verdad —hacen falta dos compras—; con una sola no hay nada que
+       enseñar. */
+    const f = Store.frecuencia(art.id);
+    if (f.cada) detalles.push('cada ' + f.cada + (f.cada === 1 ? ' día' : ' días'));
     /* «sin Auto Mercado» es una tarea pendiente y por eso se enseña. En uno a
        mano no lo es —no se empareja con nada, y nunca se va a poder— así que
        ahí sería una tarea imposible pegada a la fila para siempre. */
@@ -932,6 +974,7 @@
       caja.appendChild(tarjetaPreciosArticulo(art));
     }
 
+    caja.appendChild(tarjetaFrecuencia(art));
     caja.appendChild(tarjetaDatosArticulo(art));
     /* Tampoco el histórico: dice «aquí van a ir apareciendo las veces que
        cambie el precio», y en uno a mano no va a aparecer nunca nada. */
@@ -1090,6 +1133,90 @@
       catch (err) { boton.disabled = false; boton.textContent = 'Consultar ahora'; alert(err.message); }
     });
     tarjeta.appendChild(boton);
+
+    return tarjeta;
+  }
+
+  /* Cada cuánto se compra esto, y las veces que se ha comprado.
+
+     Tres estados distintos y cada uno dice una cosa distinta a propósito:
+
+     - Sin ninguna compra: se explica de dónde va a salir el dato. Una tarjeta
+       vacía sin explicación parece rota.
+     - Con una sola: se enseña la fecha, pero NO una frecuencia. Con un solo
+       apunte no se ha visto repetir nada todavía, y decir «cada 30 días» sería
+       inventárselo.
+     - Con dos o más: el promedio de los huecos entre compras. Con solo dos hay
+       un único hueco, así que se avisa: un intervalo no es una costumbre.
+
+     Es la misma familia de reglas que el resto de la app: preferir decir «no se
+     sabe» antes que dar una cifra que parezca medida sin estarlo. */
+  function tarjetaFrecuencia(art) {
+    const f = Store.frecuencia(art.id);
+    const tarjeta = el('section.card');
+    tarjeta.appendChild(el('h2.card-title', { text: 'Cada cuánto lo compras' }));
+
+    if (!f.veces) {
+      tarjeta.appendChild(el('p.muted', {
+        text: 'Todavía no lo has marcado como comprado. Cuando lo tengas en Mi lista y toques el ✓, elige «Comprado» y las fechas van a ir apareciendo aquí.'
+      }));
+      return tarjeta;
+    }
+
+    const cuando = f.desdeUltima === 0 ? 'hoy'
+                 : f.desdeUltima === 1 ? 'ayer'
+                 : 'hace ' + f.desdeUltima + ' días';
+
+    if (f.cada) {
+      tarjeta.appendChild(el('p.reco-eti', { text: 'Lo compras cada' }));
+      tarjeta.appendChild(el('p.reco-total', { text: f.cada + (f.cada === 1 ? ' día' : ' días') }));
+      tarjeta.appendChild(el('p.hint', {
+        text: f.intervalos === 1
+          ? 'Con solo dos compras esto es un único intervalo: tómatelo como una primera idea, no como una costumbre.'
+          : 'Promedio de ' + f.intervalos + ' intervalos, desde el ' + D.fechaMedia(f.primera) + '.'
+      }));
+      tarjeta.appendChild(el('p.ref', {
+        text: 'La última vez, el ' + D.fechaMedia(f.ultima) + ' (' + cuando + ').'
+      }));
+    } else {
+      /* Con una sola compra la fecha se dice UNA vez. Repetirla en dos líneas
+         seguidas —«comprado el 20 de agosto» y debajo «la última vez, el 20 de
+         agosto»— hace pensar que son dos compras distintas. */
+      tarjeta.appendChild(el('p.muted', {
+        text: 'Comprado una vez, el ' + D.fechaMedia(f.ultima) + ' (' + cuando +
+              '). Hace falta una segunda compra para saber cada cuánto.'
+      }));
+    }
+
+    if (f.toca && !art.pendiente) {
+      tarjeta.appendChild(el('p.hint-box', {
+        text: 'Han pasado ' + f.desdeUltima + ' días y sueles comprarlo cada ' + f.cada +
+              ', así que puede que te esté haciendo falta. Tú sabrás si todavía te queda.'
+      }));
+    }
+
+    /* Cada compra con su × porque un ✓ mal dado tiene que poder deshacerse. Sin
+       esto, un toque en falso se queda en el historial para siempre y la
+       frecuencia deja de valer nada. */
+    const compras = Store.comprasDe(art.id).slice().reverse();
+    compras.slice(0, 12).forEach((c) => {
+      tarjeta.appendChild(el('div.fila-compra', [
+        el('span.fc-fecha', { text: D.fechaMedia(c.fecha) }),
+        el('span.ref', { text: c.cantidad > 1 ? '×' + c.cantidad : '' }),
+        el('button.cat-quitar', {
+          type: 'button', text: '×', 'aria-label': 'Borrar esta compra',
+          onclick: () => {
+            if (!confirm('¿Borrar la compra del ' + D.fechaMedia(c.fecha) + '?\n\nEs para arreglar un toque en falso: el artículo no se toca.')) return;
+            Store.borrarCompra(art.id, c.fecha);
+            App.render();
+          }
+        })
+      ]));
+    });
+
+    if (compras.length > 12) {
+      tarjeta.appendChild(el('p.ref', { text: 'Y ' + (compras.length - 12) + ' compras más antes de estas.' }));
+    }
 
     return tarjeta;
   }

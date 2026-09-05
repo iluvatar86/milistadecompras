@@ -150,6 +150,7 @@
     const d = {
       v: VERSION_DATOS,
       articulos: [], listas: [], categorias: [], precios: {}, historial: [],
+      compras: [],
       ajustes: clonar(AJUSTES_DE_FABRICA)
     };
     sembrarCategorias(d);
@@ -191,6 +192,8 @@
     if (!Array.isArray(d.categorias)) d.categorias = [];
     if (!d.precios || typeof d.precios !== 'object') d.precios = {};
     if (!Array.isArray(d.historial)) d.historial = [];
+    // Las copias guardadas antes de que existiera el historial de compras.
+    if (!Array.isArray(d.compras)) d.compras = [];
     d.ajustes = Object.assign(clonar(AJUSTES_DE_FABRICA), d.ajustes || {});
     d.ajustes.tiendas = Object.assign(clonar(AJUSTES_DE_FABRICA.tiendas), d.ajustes.tiendas || {});
     d.v = VERSION_DATOS;
@@ -290,6 +293,7 @@
     d.articulos = d.articulos.filter((a) => a.id !== id);
     delete d.precios[id];
     d.historial = d.historial.filter((h) => h.art !== id);
+    d.compras = d.compras.filter((c) => c.art !== id);
     /* Y de todas las listas donde estuviera. Sin esto quedan referencias a un
        artículo que ya no existe y la lista enseña huecos —o revienta— la
        próxima vez que se abre. */
@@ -318,6 +322,94 @@
     if (!a) return;
     a.cantidad = Math.max(1, Number(n) || 1);
     save();
+  }
+
+  /* ---------- historial de compras ------------------------------------------------ */
+
+  /* Quitar algo de la lista y HABERLO COMPRADO no son lo mismo, y hasta ahora la
+     app los confundía: el ✓ hacía las dos cosas a la vez. Se separaron porque de
+     la diferencia sale el dato que interesa —cada cuánto se compra cada cosa— y
+     mezclarlos lo estropearía en las dos direcciones: quitar de la lista algo
+     que al final no se compró inventaría una compra, y no poder decir «esto sí
+     lo compré» dejaría el historial vacío para siempre.
+
+     Un apunte es {art, fecha 'aaaa-mm-dd', cantidad}. Sin hora: para saber cada
+     cuánto se compra el café, el día basta y sobra.
+
+     DOS COMPRAS DEL MISMO ARTÍCULO EL MISMO DÍA SE FUNDEN EN UNA, sumando la
+     cantidad. Casi siempre es un toque repetido, y aunque fuera de verdad —dos
+     idas al súper el mismo día— guardarlas por separado metería un hueco de
+     cero días en el cálculo de la frecuencia y lo arrastraría hacia abajo sin
+     que se pueda ver por qué. */
+  function marcarComprado(id) {
+    const a = articulo(id);
+    if (!a) return null;
+
+    const d = load();
+    const fecha = D.hoy();
+    const cantidad = Math.max(1, Number(a.cantidad) || 1);
+
+    const yaHoy = d.compras.find((c) => c.art === id && c.fecha === fecha);
+    if (yaHoy) yaHoy.cantidad += cantidad;
+    else d.compras.push({ art: id, fecha: fecha, cantidad: cantidad });
+
+    a.pendiente = false;
+    a.marcadoEn = null;
+    a.cantidad = 1;   // la cantidad era de esta compra, no del artículo
+    save();
+    return fecha;
+  }
+
+  function comprasDe(id) {
+    return load().compras
+      .filter((c) => c.art === id)
+      .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  }
+
+  /* Un ✓ mal dado tiene que poder deshacerse, o el historial se llena de
+     compras que no pasaron y la frecuencia deja de valer nada. Como las del
+     mismo día están fundidas, art + fecha identifica un apunte sin ambigüedad. */
+  function borrarCompra(id, fecha) {
+    const d = load();
+    d.compras = d.compras.filter((c) => !(c.art === id && c.fecha === fecha));
+    save();
+  }
+
+  /* Cada cuánto se compra algo, medido y no adivinado.
+
+     'cada' es el promedio de los HUECOS entre compras, no «compras partido por
+     meses»: con dos compras seguidas y luego medio año parado, el promedio por
+     mes diría una cosa razonable y los huecos dirían la verdad.
+
+     Hace falta más de una compra para que exista un hueco, así que con una sola
+     se devuelve 'cada' sin valor. Enseñar «cada 30 días» a partir de un único
+     apunte sería inventarse un dato: no se ha visto repetir nada todavía. */
+  function frecuencia(id) {
+    const compras = comprasDe(id);
+    if (!compras.length) return { veces: 0 };
+
+    const ultima = compras[compras.length - 1].fecha;
+    const r = {
+      veces: compras.length,
+      primera: compras[0].fecha,
+      ultima: ultima,
+      desdeUltima: D.diasEntre(ultima, D.hoy()),
+      total: compras.reduce((t, c) => t + (Number(c.cantidad) || 1), 0)
+    };
+
+    if (compras.length < 2) return r;
+
+    let suma = 0;
+    for (let i = 1; i < compras.length; i++) {
+      suma += D.diasEntre(compras[i - 1].fecha, compras[i].fecha);
+    }
+    r.intervalos = compras.length - 1;
+    r.cada = Math.max(1, Math.round(suma / r.intervalos));
+    /* «Ya te tocaría» es una observación, no una alarma: ha pasado más tiempo
+       del que sueles tardar en volver a comprarlo. Puede que te quede de sobra
+       en casa, y por eso en pantalla se dice así y no como un aviso. */
+    r.toca = r.desdeUltima >= r.cada;
+    return r;
   }
 
   /* ---------- categorías ---------------------------------------------------------- */
@@ -682,6 +774,7 @@
     adivinarCategoria,
     articulos, articulo, guardarArticulo, borrarArticulo, porEan, precioAMano,
     pendientes, marcarPendiente, ponerCantidad,
+    marcarComprado, comprasDe, borrarCompra, frecuencia,
     listas, listaDe, guardarLista, borrarLista,
     agregarALista, quitarDeLista, cantidadEnLista, articulosDeLista, verterEnLaCompra,
     guardarPrecios, preciosDe, historialDe, variacion,

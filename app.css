@@ -443,6 +443,68 @@ input::placeholder { color: #5E7183; }
   cursor: pointer;
 }
 
+/* Abierto el panel de elegir, el ✓ se invierte: es la señal de qué fila está
+   preguntando, y de que volver a tocarlo lo cierra. */
+.fila-pendiente .fp-listo.is-abierto {
+  background: var(--accent);
+  color: #06231A;
+  font-weight: 700;
+}
+
+/* ---------- comprado o quitado ------------------------------------------------- */
+
+/* Las dos respuestas al ✓. Van en su propia fila y no dentro de la del
+   artículo: en 375 px no caben dos botones con texto al lado del nombre, y
+   apretados se tocan el equivocado. */
+.fila-elegir {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 0 12px;
+}
+
+.fila-elegir .fe-texto {
+  flex: 1 1 100%;
+  margin: 0 0 8px;
+  font-size: .75rem;
+  color: var(--muted);
+}
+
+.fila-elegir .fe-btn {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--ink);
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* «Comprado» es la respuesta de casi siempre y la única que apunta algo, así
+   que es la que lleva el color. «Quitar» apagado al lado no se pulsa por
+   inercia. */
+.fila-elegir .fe-si {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* ---------- una compra del historial -------------------------------------------- */
+
+.fila-compra {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: .8125rem;
+}
+.fila-compra .fc-fecha { flex: 1; }
+
 /* Quitar un ingrediente de una lista con nombre. Va apagado a propósito: es la
    misma posición que el ✓ verde de «ya lo compré» en Mi lista, y darle el
    mismo peso invitaría a tocarlo por costumbre. */
