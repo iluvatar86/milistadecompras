@@ -144,12 +144,19 @@
      desde aquí sería más simple de escribir y muchísimo más lento: con quince
      artículos serían quince viajes de ida y vuelta a Google, cada uno con su
      propio arranque. */
+  /* Los artículos «a mano» se quitan AQUÍ, en el único sitio por el que pasa
+     toda consulta, y no en cada pantalla que llame a esta función. No tienen
+     código de barras: mandarlos haría que el intermediario preguntase por un
+     código vacío a los cinco supermercados —cinco consultas por artículo, todas
+     con la misma respuesta vacía— y esa respuesta se guardaría como «no lo
+     vende», que es justo lo que no queremos que diga de ellos. */
   async function consultar(articulos) {
-    if (!articulos.length) return null;
+    const consultables = articulos.filter((a) => !a.libre);
+    if (!consultables.length) return null;
 
     const cuerpo = {
       sucursalAM: Store.ajustes().sucursalAM || '01',
-      items: articulos.map((a) => ({ ean: a.ean || '', amId: a.amId || '' }))
+      items: consultables.map((a) => ({ ean: a.ean || '', amId: a.amId || '' }))
     };
 
     const datos = await pedir(url('precios'), {
@@ -158,7 +165,7 @@
       body: JSON.stringify(cuerpo)
     });
 
-    Store.guardarPrecios(datos, articulos.map((a) => a.id));
+    Store.guardarPrecios(datos, consultables.map((a) => a.id));
     return datos;
   }
 

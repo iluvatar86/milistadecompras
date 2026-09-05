@@ -247,6 +247,15 @@
       .sort((a, b) => D.normal(a.nombre).localeCompare(D.normal(b.nombre), 'es'));
   }
 
+  /* Un precio escrito a mano. Vacío no es cero: dejar el campo en blanco
+     significa «no lo sé», y convertirlo en 0 haría que un artículo sin precio
+     saliera como gratis en todos los totales. */
+  function precioAMano(x) {
+    if (x === null || x === undefined || x === '') return null;
+    const n = Number(x);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  }
+
   function guardarArticulo(art) {
     const d = load();
     const limpio = {
@@ -259,6 +268,12 @@
       unidad:    art.unidad || 'unidad',
       categoria: art.categoria || 'otros',
       imagen:    art.imagen || '',
+      /* «A mano»: un artículo que no se busca en ningún supermercado —el pan de
+         la panadería, las verduras de la feria, algo que se compra en cualquier
+         lado— y cuyo precio se escribe si se quiere. Ver la explicación de por
+         qué no compite en comparar.js. */
+      libre:        !!art.libre,
+      precioManual: precioAMano(art.precioManual),
       pendiente: !!art.pendiente,
       cantidad:  Math.max(1, Number(art.cantidad) || 1),
       marcadoEn: art.marcadoEn || null,
@@ -665,7 +680,7 @@
     load, save,
     categorias, categoria, nombreDeCategoria, agregarCategoria, borrarCategoria, cuantosEn,
     adivinarCategoria,
-    articulos, articulo, guardarArticulo, borrarArticulo, porEan,
+    articulos, articulo, guardarArticulo, borrarArticulo, porEan, precioAMano,
     pendientes, marcarPendiente, ponerCantidad,
     listas, listaDe, guardarLista, borrarLista,
     agregarALista, quitarDeLista, cantidadEnLista, articulosDeLista, verterEnLaCompra,

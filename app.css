@@ -582,6 +582,22 @@ input::placeholder { color: #5E7183; }
 .cd-fila.cd-no .cd-nombre { color: #5E7183; text-decoration: line-through; }
 .cd-fila .cd-nota { font-size: .6875rem; color: #5E7183; font-style: italic; }
 
+/* Los de a mano NO van tachados ni en el gris de 'cd-no'. Ese gris dice «este
+   súper no lo vende», y de estos no se sabe: no se le preguntó a nadie. Llevan
+   una etiqueta que lo dice en vez de un color que insinúa otra cosa. */
+.cd-fila .cd-eti {
+  flex: none;
+  font-size: .625rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  font-weight: 700;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+.cd-fila.cd-libre .cd-precio { font-weight: 500; color: var(--muted); }
+
 .cd-total {
   display: flex;
   justify-content: space-between;
@@ -613,6 +629,11 @@ input::placeholder { color: #5E7183; }
   font-weight: 700;
   color: var(--accent);
 }
+
+/* El grupo de los de a mano no es una parada: su total no compite con los de
+   los supermercados, así que va sin el verde del acento. */
+.mb-tienda.mb-libre .mb-nombre { color: var(--muted); font-weight: 600; }
+.mb-tienda.mb-libre .mb-total { color: var(--muted); font-weight: 600; }
 
 .mb-item {
   display: flex;

@@ -19,6 +19,22 @@
    solo lo que sí vende, al que le faltan tres cosas le saldría el carro más
    barato y ganaría la comparación siendo el peor sitio para ir. Por eso los
    carros incompletos se apartan y se dice cuántos artículos les faltan.
+
+   LOS ARTÍCULOS «A MANO» (art.libre) SON EL OTRO LADO DE ESA MISMA REGLA.
+
+   Son cosas que no se buscan en ningún supermercado —el pan de la panadería,
+   las verduras de la feria— y que por tanto no dicen nada sobre a cuál ir. Aquí
+   se tratan así:
+
+   - No cuentan como «le falta» a nadie. Ningún supermercado queda descalificado
+     por no tener un artículo que ni siquiera se le preguntó.
+   - Su precio, si se escribió, se suma IGUAL a todos los carros. Al sumar lo
+     mismo en todas partes no puede cambiar quién gana —que es exactamente lo
+     que pidió Pablo— y a cambio el total de la pantalla es el total de verdad,
+     no una cifra a la que le falta el pan.
+   - Aparecen en la lista desplegada de todos los supermercados, pero NO en gris
+     ni tachados: el gris significa «este súper no lo vende», y eso sería
+     mentira. Aquí simplemente no se preguntó.
 --------------------------------------------------------------------------- */
 
 (function (global) {
@@ -50,12 +66,35 @@
     return 'no lo vende';
   }
 
+  /* El precio escrito a mano, ya normalizado, o null si no se escribió ninguno.
+     Null y cero son cosas distintas y hay que mantenerlas separadas: «no sé lo
+     que cuesta» no es «es gratis». */
+  function precioAMano(art) {
+    return Store.precioAMano(art.precioManual);
+  }
+
+  function cuantos(art) {
+    return Math.max(1, Number(art.cantidad) || 1);
+  }
+
   /* ---------- un artículo ----------------------------------------------------- */
 
   /* Devuelve una fila por tienda activa, ordenadas de más barata a más cara, y
      marca cuál es la mejor. Las tiendas sin precio van al final: son una
      respuesta legítima («no lo vende»), no un error, pero no compiten. */
   function porArticulo(art) {
+    /* Un artículo a mano no tiene filas que enseñar: no hay cinco precios, hay
+       uno o ninguno. Se devuelve con la misma forma para que nadie tenga que
+       preguntar si el resultado es de un tipo o de otro, pero con 'mejor' en
+       null, porque no hay ningún supermercado que recomendar. */
+    if (art.libre) {
+      return {
+        articulo: art, libre: true, precioManual: precioAMano(art),
+        consultadoEn: null, filas: [], mejor: null, mejores: [],
+        ahorro: 0, empate: false
+      };
+    }
+
     const guardado = Store.preciosDe(art.id);
     const tiendas = Store.tiendasActivas();
 
@@ -117,12 +156,24 @@
       let total = 0;
       const faltan = [];
       const lleva = [];
+      const aMano = [];
 
       pendientes.forEach((art) => {
+        const cantidad = cuantos(art);
+
+        /* Los de a mano entran en todos los carros por igual: suman lo mismo en
+           los cinco, así que el orden no se mueve, y sin ellos el total no sería
+           lo que se va a pagar. Nunca cuentan como «le falta». */
+        if (art.libre) {
+          const precio = precioAMano(art);
+          if (precio !== null) total += precio * cantidad;
+          aMano.push({ art, precio, cantidad, subtotal: precio === null ? null : precio * cantidad });
+          return;
+        }
+
         const guardado = Store.preciosDe(art.id);
         const info = guardado && guardado.tiendas ? guardado.tiendas[t.id] : null;
         const precio = leerPrecio(info);
-        const cantidad = Math.max(1, Number(art.cantidad) || 1);
 
         if (info && info.hay && precio !== null) {
           total += precio * cantidad;
@@ -132,7 +183,7 @@
         }
       });
 
-      return { tienda: t, total, lleva, faltan, completo: faltan.length === 0 };
+      return { tienda: t, total, lleva, faltan, aMano, completo: faltan.length === 0 };
     });
 
     const completos = todos.filter((c) => c.completo && c.lleva.length)
@@ -152,10 +203,23 @@
      estuvieron. */
   function filasDeTienda(pendientes, tiendaId) {
     return pendientes.map((art) => {
+      const cantidad = cuantos(art);
+
+      /* El de a mano sale en la lista de los cinco supermercados, marcado como
+         tal. No lleva el gris de «no lo vende» porque no es cierto: no se le
+         preguntó a nadie. */
+      if (art.libre) {
+        const p = precioAMano(art);
+        return {
+          art, cantidad, libre: true, precio: p, hay: p !== null,
+          subtotal: p === null ? null : p * cantidad,
+          nota: 'a mano'
+        };
+      }
+
       const guardado = Store.preciosDe(art.id);
       const info = guardado && guardado.tiendas ? guardado.tiendas[tiendaId] : null;
       const precio = leerPrecio(info);
-      const cantidad = Math.max(1, Number(art.cantidad) || 1);
       const hay = !!(info && info.hay && precio !== null);
       return {
         art, cantidad, precio, hay,
@@ -179,7 +243,7 @@
     const analisis = pendientes.map((art) => ({
       art,
       r: porArticulo(art),
-      cantidad: Math.max(1, Number(art.cantidad) || 1)
+      cantidad: cuantos(art)
     }));
 
     const votos = {};
@@ -193,8 +257,19 @@
     let total = 0;
     const porTienda = {};
     const sinPrecio = [];
+    const aMano = [];
 
     analisis.forEach(({ art, r, cantidad }) => {
+      /* Los de a mano no son una parada más: se compran donde sea. Van aparte,
+         y su precio entra en el total —igual que entra en el de cada carro—
+         para que las dos cifras se puedan restar sin trampa. */
+      if (r.libre) {
+        const p = r.precioManual;
+        if (p !== null) total += p * cantidad;
+        aMano.push({ art, precio: p, cantidad, subtotal: p === null ? null : p * cantidad });
+        return;
+      }
+
       if (!r.mejor) { sinPrecio.push(art); return; }
 
       const candidatas = (r.mejores && r.mejores.length) ? r.mejores : [r.mejor];
@@ -213,6 +288,7 @@
     return {
       total,
       sinPrecio,
+      aMano,
       paradas: Object.keys(porTienda).map((k) => porTienda[k]).sort((a, b) => b.total - a.total)
     };
   }
@@ -230,6 +306,15 @@
   function recomendacion(pendientes) {
     const c = carros(pendientes);
     const r = repartido(pendientes);
+
+    /* Si TODO lo pendiente es a mano no hay comparación posible, y hay que
+       decirlo así. Sin esta salida los cinco carros quedan idénticos y la app
+       recomendaría un supermercado al azar entre cinco empatados, con una
+       seguridad que no tiene ningún fundamento. */
+    if (!pendientes.some((a) => !a.libre)) {
+      return { tipo: 'solo-a-mano', carros: c, repartido: r };
+    }
+
     const mejorCarro = c.completos[0] || null;
 
     if (!mejorCarro) {
@@ -269,9 +354,15 @@
     let sinPrecio = 0;
 
     contenido.forEach(({ articulo: art, cantidad }) => {
+      const n = Math.max(1, Number(cantidad) || 1);
       const r = porArticulo(art);
+      if (r.libre) {
+        if (r.precioManual === null) sinPrecio++;
+        else total += r.precioManual * n;
+        return;
+      }
       if (!r.mejor) { sinPrecio++; return; }
-      total += r.mejor.precio * Math.max(1, Number(cantidad) || 1);
+      total += r.mejor.precio * n;
     });
 
     return { total, sinPrecio, completo: sinPrecio === 0 && contenido.length > 0 };
@@ -282,19 +373,27 @@
   /* El precio más viejo de la lista manda: si uno se consultó hace una semana,
      el total de abajo no es de hoy por mucho que los otros catorce sí lo sean.
      Enseñar la fecha del más reciente sería tranquilizador y falso. */
+  /* 'comparables' son los que sí se buscan en los supermercados. Hace falta
+     aparte porque los de a mano no se consultan nunca: contarlos como «sin
+     consultar» dejaría un aviso encendido para siempre que no se puede apagar
+     haciendo nada. */
   function frescura(pendientes) {
     let masViejo = null;
     let sinConsultar = 0;
+    let comparables = 0;
     pendientes.forEach((art) => {
+      if (art.libre) return;
+      comparables++;
       const g = Store.preciosDe(art.id);
       if (!g || !g.consultadoEn) { sinConsultar++; return; }
       if (!masViejo || g.consultadoEn < masViejo) masViejo = g.consultadoEn;
     });
-    return { masViejo, sinConsultar };
+    return { masViejo, sinConsultar, comparables };
   }
 
   global.Comparar = {
     porArticulo, carros, repartido, recomendacion, frescura, costeDeLista, filasDeTienda,
+    precioAMano,
     AHORRO_MINIMO_COLONES, AHORRO_MINIMO_PCT
   };
 

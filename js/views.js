@@ -203,6 +203,15 @@
      Palí» cuando empatan. Nombrar a uno solo en un empate hace creer que hay
      que ir a ese sitio, y no lo hay: el artículo no decide nada. */
   function textoMejor(r, cantidad) {
+    /* Un artículo a mano no tiene «más barato en»: no se buscó en ningún sitio.
+       Decir «sin precios todavía» invitaría a consultar, y consultar no lo
+       arreglaría nunca. */
+    if (r.libre) {
+      return r.precioManual === null
+        ? el('span.muted', { text: 'A mano · sin precio' })
+        : el('span', ['A mano: ', chapaPrecio(r.precioManual * cantidad, false)]);
+    }
+
     if (!r.mejor) return el('span.muted', { text: 'Sin precios todavía' });
 
     const precio = chapaPrecio(r.mejor.precio * cantidad, true);
@@ -226,6 +235,17 @@
     const fr = Comparar.frescura(pendientes);
     const tarjeta = el('section.card.card-reco');
 
+    /* Va ANTES que el aviso del intermediario: si toda la lista es a mano, no
+       hace falta ningún intermediario y pedirlo sería mandar a Ajustes a
+       resolver algo que no está roto. */
+    if (!fr.comparables) {
+      tarjeta.appendChild(el('h2.card-title', { text: 'Todo es a mano' }));
+      tarjeta.appendChild(el('p.muted', {
+        text: 'Ninguno de los artículos pendientes se busca en los supermercados, así que no hay nada que comparar.'
+      }));
+      return tarjeta;
+    }
+
     if (!Store.configurado()) {
       tarjeta.appendChild(el('h2.card-title', { text: 'Falta conectar el intermediario' }));
       tarjeta.appendChild(el('p.muted', {
@@ -235,7 +255,7 @@
       return tarjeta;
     }
 
-    if (fr.sinConsultar === pendientes.length) {
+    if (fr.sinConsultar === fr.comparables) {
       tarjeta.appendChild(el('h2.card-title', { text: 'Sin precios todavía' }));
       tarjeta.appendChild(el('p.muted', { text: 'Consulta los precios para saber a qué supermercado te conviene ir.' }));
       tarjeta.appendChild(botonActualizar(pendientes));
@@ -392,7 +412,11 @@
     const detalles = [Store.nombreDeCategoria(art.categoria)];
     if (art.marca) detalles.push(art.marca);
     if (art.contenido) detalles.push(art.contenido + ' ' + art.unidad);
-    if (!art.amId) detalles.push('sin Auto Mercado');
+    /* «sin Auto Mercado» es una tarea pendiente y por eso se enseña. En uno a
+       mano no lo es —no se empareja con nada, y nunca se va a poder— así que
+       ahí sería una tarea imposible pegada a la fila para siempre. */
+    if (art.libre) detalles.push('a mano');
+    else if (!art.amId) detalles.push('sin Auto Mercado');
 
     return el('div.fila-art', [
       el('a.fa-datos', { href: '#/articulo/' + art.id }, [
@@ -426,10 +450,15 @@
     caja.appendChild(header('Agregar artículo',
       lista ? 'Se guardará en la despensa y en «' + lista.nombre + '»' : 'Búscalo por su nombre'));
 
+    /* Aunque no haya intermediario se puede agregar a mano, y por eso la tarjeta
+       de a mano se pinta también en este caso. Antes esta pantalla no ofrecía
+       nada sin intermediario, que era correcto cuando lo único que se podía
+       hacer era buscar. */
     if (!Store.configurado()) {
       caja.appendChild(vacio('Falta conectar el intermediario',
-        'Sin él no se puede buscar en los supermercados.',
+        'Sin él no se puede buscar en los supermercados. Agregarlo a mano sí funciona.',
         el('a.btn.btn-primary', { href: '#/ajustes', text: 'Ir a Ajustes' })));
+      caja.appendChild(tarjetaAMano(listaId));
       return caja;
     }
 
@@ -469,7 +498,85 @@
     });
 
     caja.appendChild(el('section.card', [formulario, resultados]));
+    caja.appendChild(tarjetaAMano(listaId));
     return caja;
+  }
+
+  /* Agregar algo SIN buscarlo en ningún supermercado.
+
+     Hay cosas que no están en el catálogo de ninguno —el pan de la panadería
+     de la esquina, las verduras de la feria, un mandado— y sin esto no cabían
+     en la lista: había que llevarlas aparte en la cabeza o en un papel, que es
+     exactamente el problema que la app venía a quitar.
+
+     El precio es opcional a propósito. Obligar a poner uno haría inventar
+     cifras, y una cifra inventada en un total tiene toda la pinta de ser un
+     precio consultado. Sin precio, el artículo sigue estando en la lista y en
+     todos los supermercados: simplemente no suma.
+
+     La tarjeta se construye UNA VEZ y no llama a App.render() al guardar: se
+     limpian los campos a mano y se deja el foco en el nombre, para poder meter
+     tres cosas seguidas sin que el teclado se cierre entre una y otra. Es la
+     regla 2 de la cabecera del archivo. */
+  function tarjetaAMano(listaId) {
+    const nombre = el('input', {
+      type: 'text', placeholder: 'Pan de la panadería', 'aria-label': 'Nombre'
+    });
+    const precio = el('input', {
+      type: 'number', min: '0', step: 'any', placeholder: 'opcional',
+      'aria-label': 'Precio aproximado'
+    });
+    const casilla = el('input', { type: 'checkbox', checked: true });
+    const estado = el('p.ref');
+
+    const boton = el('button.btn', { type: 'submit', text: 'Agregar a mano' });
+
+    const formulario = el('form', [
+      el('label.campo', [el('span', { text: 'Nombre' }), nombre]),
+      el('label.campo', [el('span', { text: 'Precio aproximado (opcional)' }), precio]),
+      listaId ? null : el('label.fila-check', [casilla, el('span', { text: 'Ponerlo ya en Mi lista' })]),
+      boton
+    ]);
+
+    formulario.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const n = nombre.value.trim();
+      if (!n) { alert('Escribe al menos el nombre.'); return; }
+
+      const adivinado = adivinarContenido(n) || {};
+      const art = Store.guardarArticulo({
+        nombre: n,
+        libre: true,
+        precioManual: precio.value,
+        contenido: adivinado.contenido || null,
+        unidad: adivinado.unidad || 'unidad',
+        categoria: Store.adivinarCategoria(n),
+        pendiente: !listaId && casilla.checked
+      });
+
+      /* Desde una lista con nombre se vuelve a ella, igual que al elegir un
+         resultado de la búsqueda: el hilo era «estoy armando el queque». */
+      if (listaId) {
+        Store.agregarALista(listaId, art.id, 1);
+        location.hash = '#/listas/' + listaId;
+        return;
+      }
+
+      nombre.value = '';
+      precio.value = '';
+      nombre.focus();
+      estado.textContent = '«' + art.nombre + '» agregado' +
+        (art.pendiente ? ' a Mi lista.' : ' a la despensa.');
+    });
+
+    return el('section.card', [
+      el('h2.card-title', { text: 'O agrégalo a mano' }),
+      el('p.muted', {
+        text: 'Para lo que no está en ningún supermercado: el pan de la panadería, las verduras de la feria. No se consulta ningún precio y no cambia a qué súper te conviene ir.'
+      }),
+      formulario,
+      estado
+    ]);
   }
 
   function pintarResultados(nodo, r, listaId) {
@@ -688,11 +795,7 @@
     return el('div.fila-pendiente', [
       el('div.fp-datos', [
         el('a.fp-nombre', { href: '#/articulo/' + art.id, text: art.nombre }),
-        el('p.fp-precio', [
-          r.mejor
-            ? el('span', { text: D.dinero(r.mejor.precio * cantidad) + ' · ' + r.mejor.tienda.nombre })
-            : el('span.muted', { text: 'Sin precio todavía' })
-        ])
+        el('p.fp-precio', [precioDeIngrediente(r, cantidad)])
       ]),
       el('div.fp-cant', [
         el('button.cant-btn', {
@@ -710,6 +813,17 @@
         onclick: () => { Store.quitarDeLista(lista.id, art.id); App.render(); }
       })
     ]);
+  }
+
+  function precioDeIngrediente(r, cantidad) {
+    if (r.libre) {
+      return r.precioManual === null
+        ? el('span.muted', { text: 'A mano · sin precio' })
+        : el('span', { text: D.dinero(r.precioManual * cantidad) + ' · a mano' });
+    }
+    return r.mejor
+      ? el('span', { text: D.dinero(r.mejor.precio * cantidad) + ' · ' + r.mejor.tienda.nombre })
+      : el('span.muted', { text: 'Sin precio todavía' });
   }
 
   /* El buscador se construye UNA VEZ y repinta solo su lista. Si se
@@ -807,10 +921,21 @@
       }));
     }
 
-    caja.appendChild(tarjetaAutoMercado(art));
-    caja.appendChild(tarjetaPreciosArticulo(art));
+    /* Un artículo a mano no tiene nada que emparejar ni nada que consultar. Las
+       dos tarjetas de arriba serían dos callejones sin salida: un buscador que
+       no puede encontrarlo —no tiene código de barras— y un botón de consultar
+       que no va a traer nunca ningún precio. */
+    if (art.libre) {
+      caja.appendChild(tarjetaPrecioAMano(art));
+    } else {
+      caja.appendChild(tarjetaAutoMercado(art));
+      caja.appendChild(tarjetaPreciosArticulo(art));
+    }
+
     caja.appendChild(tarjetaDatosArticulo(art));
-    caja.appendChild(tarjetaHistorico(art));
+    /* Tampoco el histórico: dice «aquí van a ir apareciendo las veces que
+       cambie el precio», y en uno a mano no va a aparecer nunca nada. */
+    if (!art.libre) caja.appendChild(tarjetaHistorico(art));
     caja.appendChild(tarjetaBorrar(art));
 
     return caja;
@@ -969,6 +1094,39 @@
     return tarjeta;
   }
 
+  /* El precio de un artículo a mano: se pone, se cambia y se borra desde aquí.
+
+     Se puede dejar vacío, y vacío no es cero. Un artículo sin precio sigue
+     apareciendo en la lista de los cinco supermercados; lo único que no hace es
+     sumar. Poner un cero diría que es gratis. */
+  function tarjetaPrecioAMano(art) {
+    const guardado = Store.precioAMano(art.precioManual);
+
+    const precio = el('input', {
+      type: 'number', min: '0', step: 'any',
+      value: guardado === null ? '' : String(guardado),
+      placeholder: 'opcional', 'aria-label': 'Precio'
+    });
+
+    return el('section.card', [
+      el('h2.card-title', { text: 'Precio a mano' }),
+      el('p.muted', {
+        text: 'Este artículo lo agregaste a mano, así que no se busca en ningún supermercado. El precio lo pones tú, y puedes dejarlo vacío.'
+      }),
+      el('label.campo', [el('span', { text: 'Precio' }), precio]),
+      el('button.btn', {
+        type: 'button', text: 'Guardar el precio',
+        onclick: () => {
+          Store.guardarArticulo(Object.assign({}, art, { precioManual: precio.value }));
+          App.render();
+        }
+      }),
+      el('p.hint', {
+        text: 'Pongas el precio que pongas, este artículo no cambia qué supermercado sale ganando: suma lo mismo en todos.'
+      })
+    ]);
+  }
+
   /* El contenido se puede corregir, y tiene que poder corregirse: se adivina del
      nombre y una adivinanza mala estropea el precio por unidad en silencio. */
   function tarjetaDatosArticulo(art) {
@@ -1074,6 +1232,21 @@
 
     const reco = Comparar.recomendacion(pendientes);
 
+    /* Toda la lista es a mano: no hay comparación, y montar las tarjetas de
+       siempre enseñaría cinco supermercados empatados al céntimo como si eso
+       fuera un resultado. */
+    if (reco.tipo === 'solo-a-mano') {
+      const tarjeta = el('section.card', [
+        el('h2.card-title', { text: 'No hay nada que comparar' }),
+        el('p.muted', {
+          text: 'Todo lo que tienes pendiente lo agregaste a mano, y eso no se busca en los supermercados.'
+        })
+      ]);
+      pintarLosDeAMano(tarjeta, reco.repartido.aMano);
+      caja.appendChild(tarjeta);
+      return caja;
+    }
+
     /* UN SOLO acordeón para las dos tarjetas, no uno por tarjeta.
 
        Con uno por tarjeta podían quedar dos supermercados abiertos a la vez
@@ -1125,13 +1298,19 @@
     const detalle = el('div.carro-detalle', { hidden: true });
 
     Comparar.filasDeTienda(pendientes, carro.tienda.id).forEach((f) => {
-      detalle.appendChild(el('div.cd-fila' + (f.hay ? '' : '.cd-no'), [
+      /* Los de a mano NO llevan la clase 'cd-no'. El gris tachado significa
+         «este supermercado no lo vende»; en uno a mano no se le preguntó a
+         nadie, y teñirlo de lo mismo sería afirmar algo que no se comprobó. */
+      const clase = f.libre ? '.cd-libre' : (f.hay ? '' : '.cd-no');
+
+      detalle.appendChild(el('div.cd-fila' + clase, [
         el('span.cd-nombre', {
           text: f.art.nombre + (f.cantidad > 1 ? '  ×' + f.cantidad : '')
         }),
+        f.libre ? el('span.cd-eti', { text: 'a mano' }) : null,
         f.hay
           ? el('span.cd-precio', { text: D.dinero(f.subtotal) })
-          : el('span.cd-nota', { text: f.nota || 'no lo vende' })
+          : el('span.cd-nota', { text: f.libre ? 'sin precio' : (f.nota || 'no lo vende') })
       ]));
     });
 
@@ -1181,6 +1360,7 @@
 
     if (!rep.paradas.length) {
       tarjeta.appendChild(el('p.muted', { text: 'Todavía no hay precios con los que comparar.' }));
+      pintarLosDeAMano(tarjeta, rep.aMano);
       return tarjeta;
     }
 
@@ -1208,6 +1388,8 @@
       });
     });
 
+    pintarLosDeAMano(tarjeta, rep.aMano);
+
     if (rep.sinPrecio.length) {
       tarjeta.appendChild(aviso(rep.sinPrecio.length === 1
         ? '1 artículo no tiene precio en ningún supermercado, así que no está contado.'
@@ -1215,6 +1397,32 @@
     }
 
     return tarjeta;
+  }
+
+  /* Los de a mano, como un grupo más pero SIN nombre de supermercado, porque no
+     hay ninguno al que ir por ellos. Su total está dentro del total de arriba y
+     dentro del de cada carro: al sumar lo mismo en todas partes, no puede
+     inclinar la comparación hacia ningún lado. */
+  function pintarLosDeAMano(tarjeta, aMano) {
+    if (!aMano || !aMano.length) return;
+
+    const suma = aMano.reduce((t, it) => t + (it.subtotal || 0), 0);
+
+    tarjeta.appendChild(el('div.mb-tienda.mb-libre', [
+      el('span.mb-nombre', { text: 'A mano · donde sea' }),
+      el('span.mb-total', { text: suma ? D.dinero(suma) : '' })
+    ]));
+
+    aMano.forEach((it) => {
+      tarjeta.appendChild(el('a.mb-item', { href: '#/articulo/' + it.art.id }, [
+        el('span.mb-art', { text: it.art.nombre + (it.cantidad > 1 ? '  ×' + it.cantidad : '') }),
+        el('span.mb-precio', { text: it.subtotal === null ? 'sin precio' : D.dinero(it.subtotal) })
+      ]));
+    });
+
+    tarjeta.appendChild(el('p.hint', {
+      text: 'Estos no se buscan en ningún supermercado, así que no cambian cuál sale ganando: suman lo mismo en todos.'
+    }));
   }
 
   /* ===========================================================================
