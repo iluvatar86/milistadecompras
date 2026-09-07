@@ -59,6 +59,13 @@
 
     if (FORMULARIOS.indexOf(route.name) < 0) Views.olvidarBorradores();
 
+    /* La cámara del escáner es lo único que sobrevive a borrar la pantalla: el
+       <video> desaparece pero la cámara del teléfono se queda encendida, con su
+       luz y su batería. Se apaga en CADA repintado, no solo al cambiar de
+       pantalla, porque cualquier cosa que llame a render() se lleva por delante
+       el <video> igual. */
+    Views.cerrarEscaner();
+
     try {
       switch (route.name) {
         case 'despensa':

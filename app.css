@@ -348,6 +348,30 @@ input::placeholder { color: #5E7183; }
   color: var(--accent);
 }
 
+/* El mismo interruptor, pero cuando es lo primero de la tarjeta y elige entre
+   dos formas de buscar: ahí tiene que verse a la primera, no como un ajuste
+   pequeño en la esquina. */
+.orden-ancho { margin-bottom: 12px; }
+.orden-ancho .orden-btn { flex: 1; padding: 8px 10px; font-size: .75rem; }
+
+/* ---------- el escáner de la cámara --------------------------------------------- */
+
+.escaner { margin-top: 12px; }
+
+.escaner video {
+  display: block;
+  width: 100%;
+  /* Apaisado: un código de barras es ancho y bajo, y así cabe entero en el
+     visor sin tener que alejar el teléfono. */
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #000;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.escaner .hint { margin: 8px 0; }
+
 /* Cabecera de cada sección del súper dentro de la lista. Va discreta: separa,
    no compite con los nombres de los artículos. */
 .grupo {
@@ -557,6 +581,9 @@ input::placeholder { color: #5E7183; }
 }
 
 .res-fila:disabled { opacity: .5; cursor: default; }
+/* La fila también se usa como enlace («ya está en tu despensa, tócalo para
+   abrirlo»), y un subrayado ahí la rompe en dos. */
+a.res-fila { text-decoration: none; }
 .res-fila .res-nombre { font-size: .875rem; font-weight: 600; }
 .res-fila .res-sub { font-size: .75rem; color: var(--muted); }
 

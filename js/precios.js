@@ -154,19 +154,111 @@
     const consultables = articulos.filter((a) => !a.libre);
     if (!consultables.length) return null;
 
-    const cuerpo = {
-      sucursalAM: Store.ajustes().sucursalAM || '01',
-      items: consultables.map((a) => ({ ean: a.ean || '', amId: a.amId || '' }))
-    };
-
-    const datos = await pedir(url('precios'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },  // ver cabecera
-      body: JSON.stringify(cuerpo)
-    });
+    const datos = await enviarPrecios(
+      consultables.map((a) => ({ ean: a.ean || '', amId: a.amId || '' })));
 
     Store.guardarPrecios(datos, consultables.map((a) => a.id));
     return datos;
+  }
+
+  /* El envío en crudo, sin guardar nada. Lo comparten la consulta de precios de
+     la lista y la búsqueda por código de barras, que necesita exactamente la
+     misma pregunta pero NO puede guardar el resultado: cuando se busca por
+     código, el artículo todavía no existe y no hay ningún id al que atarlo. */
+  function enviarPrecios(items) {
+    return pedir(url('precios'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },  // ver cabecera
+      body: JSON.stringify({
+        sucursalAM: Store.ajustes().sucursalAM || '06',
+        items: items
+      })
+    });
+  }
+
+  /* ---------- buscar por código de barras ------------------------------------- */
+
+  /* NO HACE FALTA NINGUNA OPERACIÓN NUEVA EN EL INTERMEDIARIO, y conviene que
+     siga siendo así: buscar por código es literalmente lo que hace la consulta
+     de precios —los cuatro adaptadores VTEX y Megasuper preguntan por el EAN—,
+     solo que aquí interesa el NOMBRE que devuelven y no el precio. Reusar
+     'precios' significa que esto funciona con el script que Pablo ya tiene
+     publicado, sin volver a pegar nada.
+
+     Auto Mercado se queda fuera, y no es un olvido: no guarda el código de
+     barras, así que por código es imposible encontrarlo ahí. El artículo nace
+     sin emparejar y se empareja en su ficha, igual que al buscarlo por nombre. */
+
+  const ORDEN_DEL_NOMBRE = ['masxmenos', 'walmart', 'maxipali', 'megasuper'];
+
+  function soloDigitos(texto) {
+    return String(texto || '').replace(/\D+/g, '');
+  }
+
+  /* El último dígito de un código de barras se calcula a partir de los demás,
+     así que un número mal tecleado se puede detectar SIN preguntarle a nadie.
+
+     Merece la pena comprobarlo: sin esto, un dígito cambiado da «no lo
+     encontré», que es indistinguible de «no lo venden» y manda a buscar el
+     producto equivocado. Con esto se puede decir «ese número está mal escrito».
+
+     Se rellena a 14 dígitos por la izquierda para que la misma cuenta valga
+     para EAN-8, UPC-12 y EAN-13. */
+  function codigoValido(ean) {
+    if (!/^(\d{8}|\d{12,14})$/.test(ean)) return false;
+    const d = ean.padStart(14, '0').split('').map(Number);
+    let suma = 0;
+    for (let i = 0; i < 13; i++) suma += d[i] * (i % 2 === 0 ? 3 : 1);
+    return (10 - (suma % 10)) % 10 === d[13];
+  }
+
+  /* De la respuesta de precios saca lo que identifica al producto: su nombre y
+     en qué tiendas apareció. El nombre se toma de la primera tienda que lo
+     traiga, en orden: Más x Menos suele tener el nombre más completo. */
+  function leerHallazgo(ean, datos) {
+    const item = datos && datos.items && datos.items[0];
+    if (!item) return null;
+    const tiendas = item.tiendas || {};
+
+    let nombre = '';
+    for (let i = 0; i < ORDEN_DEL_NOMBRE.length; i++) {
+      const t = tiendas[ORDEN_DEL_NOMBRE[i]];
+      if (t && t.nombre) { nombre = t.nombre; break; }
+    }
+    /* Sin nombre no hay producto: las cuatro tiendas contestaron «no lo vende».
+       Un artículo con un código y sin nombre no le sirve de nada a nadie. */
+    if (!nombre) return null;
+
+    const conPrecio = Object.keys(tiendas)
+      .filter((id) => tiendas[id] && tiendas[id].hay && tiendas[id].precio)
+      .map((id) => ({ id: id, precio: Number(tiendas[id].precio) }))
+      .sort((a, b) => a.precio - b.precio);
+
+    return { ean: ean, nombre: nombre, enTiendas: conPrecio };
+  }
+
+  async function porCodigo(codigo) {
+    const ean = soloDigitos(codigo);
+    if (!ean) throw new Error('Escribe el código de barras: son solo números.');
+    if (!codigoValido(ean)) {
+      throw new Error('Ese código no cuadra (' + ean + '). El último dígito se calcula a partir de los demás y no da. Revisa que no falte ni sobre ningún número.');
+    }
+
+    const datos = await enviarPrecios([{ ean: ean, amId: '' }]);
+    let hallazgo = leerHallazgo(ean, datos);
+    let respuesta = datos;
+
+    /* Lo importado de Estados Unidos trae 12 dígitos (UPC) y los supermercados
+       lo guardan con un cero delante, en formato de 13. Solo se reintenta
+       cuando ya falló, así que no cuesta nada en el caso normal. */
+    if (!hallazgo && ean.length === 12) {
+      const conCero = '0' + ean;
+      const otros = await enviarPrecios([{ ean: conCero, amId: '' }]);
+      const segundo = leerHallazgo(conCero, otros);
+      if (segundo) { hallazgo = segundo; respuesta = otros; }
+    }
+
+    return { ean: hallazgo ? hallazgo.ean : ean, hallazgo: hallazgo, respuesta: respuesta };
   }
 
   /* Comprobación de Ajustes: dice si el intermediario está vivo sin consultar
@@ -176,6 +268,6 @@
     return !!(datos && datos.ok);
   }
 
-  global.Precios = { buscar, consultar, probar };
+  global.Precios = { buscar, consultar, probar, porCodigo, codigoValido, soloDigitos };
 
 })(window);

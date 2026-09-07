@@ -490,7 +490,8 @@
       : botonVolver('#/despensa', 'Despensa'));
 
     caja.appendChild(header('Agregar artículo',
-      lista ? 'Se guardará en la despensa y en «' + lista.nombre + '»' : 'Búscalo por su nombre'));
+      lista ? 'Se guardará en la despensa y en «' + lista.nombre + '»'
+            : 'Búscalo por nombre o por código de barras'));
 
     /* Aunque no haya intermediario se puede agregar a mano, y por eso la tarjeta
        de a mano se pinta también en este caso. Antes esta pantalla no ofrecía
@@ -504,25 +505,41 @@
       return caja;
     }
 
+    caja.appendChild(tarjetaBuscar(listaId));
+    caja.appendChild(tarjetaAMano(listaId));
+    return caja;
+  }
+
+  /* Buscar por nombre o por código de barras, en la misma tarjeta y con el
+     mismo interruptor que usa «Por sección / A–Z».
+
+     Las dos maneras buscan cosas distintas y por eso conviven: por nombre se
+     busca lo que no se tiene delante («¿qué yogures griegos hay?»), y por
+     código lo que sí —el envase en la mano— sin dudar de la marca ni del
+     tamaño. Por código no hay lista de resultados que mirar: un código es un
+     envase exacto y solo puede salir uno.
+
+     La tarjeta se construye UNA VEZ y el interruptor solo enciende y apaga los
+     dos formularios: si se repintara, el campo sería un elemento nuevo y en el
+     móvil se cerraría el teclado (regla 2 de la cabecera). */
+  function tarjetaBuscar(listaId) {
     const resultados = el('div.resultados');
+    let modo = 'nombre';
 
-    const campo = el('input', {
-      type: 'search',
-      placeholder: 'yogurt griego arándano',
-      'aria-label': 'Qué buscar'
+    // --- por nombre ----------------------------------------------------------
+    const campoNombre = el('input', {
+      type: 'search', placeholder: 'yogurt griego arándano', 'aria-label': 'Qué buscar'
     });
+    const botonNombre = el('button.btn.btn-primary', { type: 'submit', text: 'Buscar' });
+    const formNombre = el('form.buscar-form', [campoNombre, botonNombre]);
 
-    const boton = el('button.btn.btn-primary', { type: 'submit', text: 'Buscar' });
-
-    const formulario = el('form.buscar-form', [campo, boton]);
-
-    formulario.addEventListener('submit', async (ev) => {
+    formNombre.addEventListener('submit', async (ev) => {
       ev.preventDefault();
-      const q = campo.value.trim();
+      const q = campoNombre.value.trim();
       if (q.length < 3) { alert('Escribe al menos 3 letras.'); return; }
 
-      boton.disabled = true;
-      boton.textContent = 'Buscando…';
+      botonNombre.disabled = true;
+      botonNombre.textContent = 'Buscando…';
       D.clear(resultados);
       resultados.appendChild(el('p.muted', { text: 'Buscando en los supermercados…' }));
 
@@ -534,14 +551,283 @@
         D.clear(resultados);
         resultados.appendChild(aviso(err.message, 'malo'));
       } finally {
-        boton.disabled = false;
-        boton.textContent = 'Buscar';
+        botonNombre.disabled = false;
+        botonNombre.textContent = 'Buscar';
       }
     });
 
-    caja.appendChild(el('section.card', [formulario, resultados]));
-    caja.appendChild(tarjetaAMano(listaId));
-    return caja;
+    // --- por código ----------------------------------------------------------
+    /* inputmode 'numeric' y no type 'number': el type numérico trae flechitas
+       de subir y bajar que no tienen ningún sentido en un código de barras, y
+       algunos navegadores se comen los ceros de delante. */
+    const campoCodigo = el('input', {
+      type: 'text', inputmode: 'numeric', autocomplete: 'off',
+      placeholder: '7441001641220', 'aria-label': 'Código de barras'
+    });
+    const botonCodigo = el('button.btn.btn-primary', { type: 'submit', text: 'Buscar' });
+    const formCodigo = el('form.buscar-form', [campoCodigo, botonCodigo]);
+    const visor = el('div.escaner', { hidden: true });
+
+    async function buscarCodigo(codigo) {
+      botonCodigo.disabled = true;
+      botonCodigo.textContent = 'Buscando…';
+      D.clear(resultados);
+      resultados.appendChild(el('p.muted', { text: 'Preguntando por ese código en los supermercados…' }));
+
+      try {
+        const r = await Precios.porCodigo(codigo);
+        D.clear(resultados);
+        pintarHallazgo(resultados, r, listaId);
+      } catch (err) {
+        D.clear(resultados);
+        resultados.appendChild(aviso(err.message, 'malo'));
+      } finally {
+        botonCodigo.disabled = false;
+        botonCodigo.textContent = 'Buscar';
+      }
+    }
+
+    formCodigo.addEventListener('submit', (ev) => {
+      ev.preventDefault();
+      const c = Precios.soloDigitos(campoCodigo.value);
+      if (!c) { alert('Escribe el código de barras: son solo números.'); return; }
+      buscarCodigo(c);
+    });
+
+    const cajaCodigo = el('div', { hidden: true }, [
+      formCodigo,
+      el('p.hint', { text: 'Es el número de debajo de las rayas, en el envase. Suelen ser 13 dígitos.' }),
+      visor
+    ]);
+
+    /* El escáner solo se ofrece donde el navegador sabe leer códigos de barras
+       por su cuenta —Chrome en Android, hoy—. Donde no, la tarjeta no enseña un
+       botón que va a fallar: simplemente se teclea el número, que funciona en
+       todas partes. Sin librerías: la que haría esto pesa más que la app
+       entera. */
+    if (hayEscaner()) {
+      const botonEscanear = el('button.btn.btn-block', { type: 'button', text: '📷 Escanear con la cámara' });
+      botonEscanear.addEventListener('click', async () => {
+        botonEscanear.disabled = true;
+        try {
+          await abrirEscaner(visor, (codigo) => {
+            campoCodigo.value = codigo;
+            botonEscanear.disabled = false;
+            if (navigator.vibrate) navigator.vibrate(60);
+            buscarCodigo(codigo);
+          });
+        } catch (err) {
+          botonEscanear.disabled = false;
+          D.clear(resultados);
+          resultados.appendChild(aviso(err.message, 'malo'));
+        }
+      });
+      cajaCodigo.insertBefore(botonEscanear, visor);
+    }
+
+    // --- el interruptor -------------------------------------------------------
+    const botones = {};
+    function cambiar(nuevo) {
+      if (nuevo === modo) return;
+      modo = nuevo;
+      cerrarEscaner();                 // la cámara no se queda encendida al cambiar
+      formNombre.hidden = modo !== 'nombre';
+      cajaCodigo.hidden = modo !== 'codigo';
+      /* Los resultados se borran al cambiar de modo: dejar debajo lo que
+         encontró la otra búsqueda invita a tocar el artículo equivocado. */
+      D.clear(resultados);
+      Object.keys(botones).forEach((k) => {
+        botones[k].classList.toggle('is-active', k === modo);
+        botones[k].setAttribute('aria-pressed', k === modo ? 'true' : 'false');
+      });
+      (modo === 'nombre' ? campoNombre : campoCodigo).focus();
+    }
+
+    ['nombre', 'codigo'].forEach((id) => {
+      botones[id] = el('button.orden-btn' + (id === modo ? '.is-active' : ''), {
+        type: 'button',
+        text: id === 'nombre' ? 'Por nombre' : 'Por código',
+        'aria-pressed': id === modo ? 'true' : 'false',
+        onclick: () => cambiar(id)
+      });
+    });
+
+    return el('section.card', [
+      el('div.orden.orden-ancho', [botones.nombre, botones.codigo]),
+      formNombre,
+      cajaCodigo,
+      resultados
+    ]);
+  }
+
+  /* ---------- el escáner de la cámara ------------------------------------------ */
+
+  /* La cámara es lo único de toda la app que sigue funcionando después de que la
+     pantalla se borre: `App.render()` quita el <video>, pero la cámara del
+     teléfono se queda encendida, con su luz y su batería. Por eso el trozo que
+     hay que apagar vive aquí fuera y `app.js` llama a `cerrarEscaner()` en cada
+     repintado. */
+  let escaner = null;
+
+  function hayEscaner() {
+    return !!(global.BarcodeDetector && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  }
+
+  function cerrarEscaner() {
+    if (!escaner) return;
+    clearInterval(escaner.reloj);
+    escaner.stream.getTracks().forEach((t) => t.stop());
+    if (escaner.visor) escaner.visor.hidden = true;
+    D.clear(escaner.visor);
+    escaner = null;
+  }
+
+  async function abrirEscaner(visor, alLeer) {
+    cerrarEscaner();
+
+    let detector;
+    try {
+      detector = new BarcodeDetector({ formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e'] });
+    } catch (err) {
+      throw new Error('Este navegador no sabe leer códigos de barras. Teclea el número.');
+    }
+
+    let stream;
+    try {
+      // 'environment' es la cámara de atrás, que es con la que se apunta a algo.
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+    } catch (err) {
+      throw new Error('No se pudo abrir la cámara. Puede que le hayas dicho que no al permiso: revísalo en los ajustes del navegador, o teclea el número.');
+    }
+
+    const video = el('video', { playsinline: 'true', muted: 'true', 'aria-label': 'Cámara' });
+    video.srcObject = stream;
+    video.muted = true;
+
+    const cerrar = el('button.btn.btn-block', {
+      type: 'button', text: 'Cerrar la cámara',
+      onclick: () => cerrarEscaner()
+    });
+
+    D.clear(visor);
+    visor.appendChild(video);
+    visor.appendChild(el('p.hint', { text: 'Apunta al código de barras. Se lee solo.' }));
+    visor.appendChild(cerrar);
+    visor.hidden = false;
+
+    /* LA CÁMARA SE APUNTA COMO «ENCENDIDA» ANTES DE HACER NADA MÁS CON ELLA, y
+       esto no es una manía: en cuanto `getUserMedia` contesta, la cámara del
+       teléfono YA está encendida. Si algo fallara entre ese momento y el
+       apunte, `cerrarEscaner()` no tendría nada que apagar y la cámara se
+       quedaría encendida sin ningún botón que la parase.
+
+       Pasó en la prueba: el código esperaba a `video.play()`, esa promesa no
+       se resolvió nunca, y el escáner quedó con la cámara viva y el botón de
+       cerrar sin efecto. */
+    escaner = { stream: stream, reloj: 0, visor: visor };
+
+    /* Y no se espera a `play()`: hay navegadores en los que esa promesa no
+       resuelve nunca. Se arranca la reproducción y se empieza a mirar; los
+       primeros intentos fallarán porque todavía no hay imagen, y eso ya está
+       contemplado abajo. */
+    video.play().catch(() => { /* el bucle aguanta que todavía no haya imagen */ });
+
+    /* Se mira cada cuarto de segundo y no en cada fotograma: leer 60 veces por
+       segundo calienta el teléfono para nada, porque el código no se mueve tan
+       rápido. */
+    escaner.reloj = setInterval(async () => {
+      if (!escaner) return;
+      try {
+        const codigos = await detector.detect(video);
+        if (!codigos.length) return;
+        const valor = Precios.soloDigitos(codigos[0].rawValue);
+        if (!valor) return;
+        cerrarEscaner();
+        alLeer(valor);
+      } catch (err) {
+        /* Un fotograma borroso —o que todavía no haya ninguno— falla y no pasa
+           nada: se prueba con el siguiente. Parar el escáner por esto sería
+           obligar a empezar de cero cada vez que tiembla la mano. */
+      }
+    }, 250);
+  }
+
+  /* Lo que se encontró con un código de barras: un producto, no una lista. Un
+     código identifica un envase exacto, así que enseñar «resultados» en plural
+     haría dudar de si es el correcto cuando no hay ninguna duda posible. */
+  function pintarHallazgo(nodo, r, listaId) {
+    if (!r.hallazgo) {
+      nodo.appendChild(aviso('Ninguno de los supermercados tiene el código ' + r.ean +
+        '. Puede que no lo vendan, o que se haya colado un dígito. También puedes buscarlo por nombre.', 'ojo'));
+      return;
+    }
+
+    const h = r.hallazgo;
+    const yaEsta = Store.porEan(h.ean);
+
+    const donde = h.enTiendas.length
+      ? h.enTiendas.length + (h.enTiendas.length === 1 ? ' supermercado · desde ' : ' supermercados · desde ') +
+        D.dinero(h.enTiendas[0].precio)
+      : 'lo tienen en el catálogo, pero sin existencias';
+
+    /* Igual que en la búsqueda por nombre: si ya está en la despensa no se
+       vuelve a crear, pero desde una lista con nombre sí se puede meter en ella
+       — si no, se llega a un callejón sin salida. */
+    if (yaEsta && listaId) {
+      nodo.appendChild(el('button.res-fila', {
+        type: 'button',
+        onclick: () => { Store.agregarALista(listaId, yaEsta.id, 1); location.hash = '#/listas/' + listaId; }
+      }, [
+        el('span.res-nombre', { text: yaEsta.nombre }),
+        el('span.res-sub', { text: 'Ya en tu despensa · tocar para agregarlo a la lista' })
+      ]));
+      return;
+    }
+
+    if (yaEsta) {
+      nodo.appendChild(el('a.res-fila', { href: '#/articulo/' + yaEsta.id }, [
+        el('span.res-nombre', { text: yaEsta.nombre }),
+        el('span.res-sub', { text: 'Ya está en tu despensa · tocar para abrirlo' })
+      ]));
+      return;
+    }
+
+    nodo.appendChild(el('button.res-fila', {
+      type: 'button',
+      onclick: () => elegidoPorCodigo(h, r.respuesta, listaId)
+    }, [
+      el('span.res-nombre', { text: h.nombre }),
+      el('span.res-sub', { text: donde })
+    ]));
+
+    nodo.appendChild(el('p.hint', { text: 'Código ' + h.ean + '. Auto Mercado no aparece aquí porque no publica el código de barras: se empareja después, en la ficha.' }));
+  }
+
+  function elegidoPorCodigo(hallazgo, respuesta, listaId) {
+    const adivinado = adivinarContenido(hallazgo.nombre) || {};
+    const art = Store.guardarArticulo({
+      nombre:    hallazgo.nombre,
+      ean:       hallazgo.ean,
+      contenido: adivinado.contenido || null,
+      unidad:    adivinado.unidad || 'unidad',
+      categoria: Store.adivinarCategoria(hallazgo.nombre)
+    });
+
+    /* Los precios ya vinieron en la misma consulta que resolvió el código, así
+       que se guardan ahora que el artículo tiene id. Sin esto habría que
+       consultarlos otra vez para algo que ya está en la mano. */
+    try { Store.guardarPrecios(respuesta, [art.id]); }
+    catch (err) { console.warn('No se pudieron guardar los precios de la búsqueda:', err.message); }
+
+    if (listaId) {
+      Store.agregarALista(listaId, art.id, 1);
+      location.hash = '#/listas/' + listaId;
+      return;
+    }
+
+    location.hash = '#/articulo/' + art.id + '/nuevo';
   }
 
   /* Agregar algo SIN buscarlo en ningún supermercado.
@@ -1800,7 +2086,7 @@
     helpers: { header, vacio, aviso },
     lista, despensa, agregar, articuloDetalle, comparar, ajustes,
     listas, listaDetalle,
-    olvidarBorradores, hayBorrador, adivinarContenido
+    olvidarBorradores, hayBorrador, adivinarContenido, cerrarEscaner
   };
 
 })(window);

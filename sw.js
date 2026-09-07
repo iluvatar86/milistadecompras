@@ -7,7 +7,7 @@
    funcionará sin conexión.
 --------------------------------------------------------------------------- */
 
-const VERSION = 'milistadecompras-v7';
+const VERSION = 'milistadecompras-v8';
 
 const FILES = [
   './',
